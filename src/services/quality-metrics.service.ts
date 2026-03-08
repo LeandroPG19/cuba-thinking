@@ -2,11 +2,15 @@ import type { QualityScores, QualityTrend, ThinkingStage } from '../types.js';
 import { STAGE_QUALITY_WEIGHTS } from './stage-engine.service.js';
 
 const MIN_TREND_POINTS = 3;
-
 const TREND_WINDOW = 10;
+const EWMA_ALPHA = 0.3;
+const STAGNATION_EPSILON = 0.02;
+const STAGNATION_CONSECUTIVE = 3;
 
 export class QualityMetricsService {
   private history: number[] = [];
+  private ewma: number | null = null;
+  private consecutiveStagnant = 0;
 
   
   calculate(
@@ -52,7 +56,6 @@ export class QualityMetricsService {
     };
   }
 
-  
   getTrend(): QualityTrend {
     const data = this.history.slice(-TREND_WINDOW);
     if (data.length < MIN_TREND_POINTS) return 'stable';
@@ -75,9 +78,43 @@ export class QualityMetricsService {
     return 'stable';
   }
 
-  
+  stabilityScore(quality: QualityScores): number {
+    const dims = [
+      quality.clarity, quality.depth, quality.breadth,
+      quality.logic, quality.relevance, quality.actionability,
+    ];
+    const H = shannonEntropy(dims);
+    const Hmax = Math.log2(dims.length);
+    return Hmax > 0 ? round(H / Hmax) : 0;
+  }
+
+  updateEwma(quality: number, coherence: number, contradictionRatio: number): number {
+    const reward = 0.6 * quality + 0.3 * coherence + 0.1 * (1 - contradictionRatio);
+    this.ewma = this.ewma === null
+      ? reward
+      : EWMA_ALPHA * reward + (1 - EWMA_ALPHA) * this.ewma;
+    return round(this.ewma);
+  }
+
+  checkOverthinking(_thoughtNumber: number): string | undefined {
+    if (this.history.length < STAGNATION_CONSECUTIVE + 1) return undefined;
+    const recent = this.history.slice(-2);
+    const diff = Math.abs(recent[1] - recent[0]);
+    if (diff < STAGNATION_EPSILON) {
+      this.consecutiveStagnant++;
+    } else {
+      this.consecutiveStagnant = 0;
+    }
+    if (this.consecutiveStagnant >= STAGNATION_CONSECUTIVE) {
+      return `Stagnation detected: ${this.consecutiveStagnant} consecutive thoughts with <${(STAGNATION_EPSILON * 100).toFixed(0)}% quality improvement. Consider concluding.`;
+    }
+    return undefined;
+  }
+
   reset(): void {
     this.history = [];
+    this.ewma = null;
+    this.consecutiveStagnant = 0;
   }
 
   
@@ -154,6 +191,13 @@ export class QualityMetricsService {
 
     return clamp(score);
   }
+}
+
+function shannonEntropy(scores: number[]): number {
+  const sum = scores.reduce((a, b) => a + b, 0);
+  if (sum < 1e-10) return 0;
+  const probs = scores.map(s => s / sum);
+  return -probs.reduce((h, p) => p > 0 ? h + p * Math.log2(p) : h, 0);
 }
 
 function linearRegressionSlope(values: number[]): number {

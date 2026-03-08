@@ -171,7 +171,33 @@ export class AntiHallucinationService {
     return this.allAssumptions.length;
   }
 
-  
+  getOpenAssumptions(): string[] {
+    return this.allAssumptions.map(a => a.text);
+  }
+
+  generateVerificationCheckpoint(
+    thoughtNumber: number,
+    previousStage: string,
+    currentStage: string,
+  ): { triggeredAt: number; stageTransition: string; openAssumptions: string[]; suggestedQuestions: string[] } | undefined {
+    const triggerTransitions = ['ANALYZE→HYPOTHESIZE', 'HYPOTHESIZE→SYNTHESIZE'];
+    const transition = `${previousStage}→${currentStage}`;
+    if (!triggerTransitions.includes(transition)) return undefined;
+    const open = this.getOpenAssumptions();
+    if (open.length === 0) return undefined;
+    const questions = open.slice(0, 5).map(a => {
+      const lower = a.toLowerCase();
+      if (lower.includes('available') || lower.includes('exists')) {
+        return `Has "${a}" been confirmed?`;
+      }
+      if (lower.includes('>') || lower.includes('<') || lower.includes('%')) {
+        return `What evidence supports: "${a}"?`;
+      }
+      return `Is this assumption verified: "${a}"?`;
+    });
+    return { triggeredAt: thoughtNumber, stageTransition: transition, openAssumptions: open, suggestedQuestions: questions };
+  }
+
   reset(): void {
     this.allAssumptions = [];
     this.thoughtTexts.clear();

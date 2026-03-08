@@ -103,6 +103,11 @@ const cubaTool: Tool = {
         description:
           'Detected cognitive bias: confirmation, anchoring, availability, overconfidence, sunk_cost',
       },
+      parentThoughts: {
+        type: 'array',
+        items: { type: 'number' },
+        description: 'Multiple parent thought references for GoT merge operations',
+      },
     },
     required: ['thought', 'thoughtNumber', 'totalThoughts', 'nextThoughtNeeded'],
   },

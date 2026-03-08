@@ -38,7 +38,17 @@ export function formatResponse(output: CubaThinkingOutput): string {
   if (output.relevanceScore !== undefined) {
     lines.push(`  Semantic Relevance: ${(output.relevanceScore * 100).toFixed(0)}% (embedding)`);
   }
+
+  if (output.ewmaReward !== undefined) {
+    lines.push(`  EWMA Reward:   ${bar(output.ewmaReward)} ${(output.ewmaReward * 100).toFixed(0)}%`);
+  }
+
+  if (output.stability !== undefined) {
+    lines.push(`  ⚠️ Stability:  ${bar(output.stability)} ${(output.stability * 100).toFixed(0)}% — reasoning is unbalanced`);
+  }
+
   lines.push('');
+
   if (output.assumptions.length > 0) {
     lines.push(`── Assumptions (${output.assumptions.length}) ──────────────────────`);
     for (const a of output.assumptions.slice(-5)) {
@@ -61,8 +71,30 @@ export function formatResponse(output: CubaThinkingOutput): string {
   if (output.confidenceCalibration) {
     formatCalibration(output.confidenceCalibration, lines);
   }
+
+  if (output.verificationCheckpoint) {
+    const vc = output.verificationCheckpoint;
+    lines.push(`── Verification Checkpoint (${vc.stageTransition}) ──────`);
+    lines.push(`  Open assumptions: ${vc.openAssumptions.length}`);
+    for (const q of vc.suggestedQuestions) {
+      lines.push(`  ❓ ${q}`);
+    }
+    lines.push('');
+  }
+
   if (output.stagnationWarning) {
     lines.push(`⚠️ ${output.stagnationWarning}`);
+    lines.push('');
+  }
+
+  if (output.overthinkingWarning) {
+    lines.push(`⚡ ${output.overthinkingWarning}`);
+    lines.push('');
+  }
+
+  if (output.fatigue) {
+    const f = output.fatigue;
+    lines.push(`🧠 Fatigue: ${f.consecutiveDrops} consecutive quality drops → ${f.suggestedAction}`);
     lines.push('');
   }
 
@@ -73,6 +105,18 @@ export function formatResponse(output: CubaThinkingOutput): string {
     }
     lines.push('');
   }
+
+  if (output.edges.length > 0) {
+    lines.push(`── Graph (${output.edges.length} edges) ──────────────────────`);
+    for (const e of output.edges.slice(-5)) {
+      lines.push(`  ${e.from} →[${e.type}]→ ${e.to}`);
+    }
+    if (output.graphCoherence !== undefined) {
+      lines.push(`  Coherence: ${(output.graphCoherence * 100).toFixed(0)}%`);
+    }
+    lines.push('');
+  }
+
   if (output.stage.suggestedAction) {
     lines.push(`💡 ${output.stage.suggestedAction}`);
     lines.push('');

@@ -50,6 +50,8 @@ export const CubaThinkingInputSchema = z.object({
     .describe('Percentage of thinking budget consumed (0-100)'),
   biasDetected: z.string().optional()
     .describe('Detected cognitive bias: confirmation, anchoring, availability, overconfidence, sunk_cost'),
+  parentThoughts: z.array(z.number().int().min(1)).max(10).optional()
+    .describe('Multiple parent thought references for GoT merge operations'),
 });
 
 export type CubaThinkingInput = z.infer<typeof CubaThinkingInputSchema>;
@@ -85,6 +87,27 @@ export interface StageInfo {
   suggestedAction?: string;
 }
 
+export type EdgeType = 'extends' | 'revises' | 'merges';
+
+export interface ThoughtEdge {
+  from: number;
+  to: number;
+  type: EdgeType;
+}
+
+export interface VerificationCheckpoint {
+  triggeredAt: number;
+  stageTransition: string;
+  openAssumptions: string[];
+  suggestedQuestions: string[];
+}
+
+export interface FatigueReport {
+  fatigueDetected: boolean;
+  consecutiveDrops: number;
+  suggestedAction: 'continue' | 'conclude' | 'step_back';
+}
+
 export interface CubaThinkingOutput {
   thought: string;
   thoughtNumber: number;
@@ -93,10 +116,17 @@ export interface CubaThinkingOutput {
   stage: StageInfo;
   quality: QualityScores;
   qualityTrend: QualityTrend;
+  stability?: number;
+  ewmaReward?: number;
   assumptions: string[];
   contradictions: Contradiction[];
   confidenceCalibration?: ConfidenceCalibration;
   stagnationWarning?: string;
+  overthinkingWarning?: string;
+  verificationCheckpoint?: VerificationCheckpoint;
+  fatigue?: FatigueReport;
+  edges: ThoughtEdge[];
+  graphCoherence?: number;
   biasDetected?: string;
   biasSuggestion?: string;
   relevanceScore?: number;
