@@ -11,29 +11,39 @@
 AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 
 - **A cognitive engine** — 6-stage state machine (Bloom's Taxonomy) that guides thinking from DEFINE → SYNTHESIZE
-- **Semantic embeddings** — Local BGE-small-en-v1.5 (384d) for thought similarity and stagnation detection
-- **6D quality metrics** — Clarity, Depth, Breadth, Logic, Relevance, Actionability with EWMA trend analysis
-- **Anti-hallucination** — Assumption tracking, contradiction detection, confidence calibration, Chain-of-Verification
+- **Semantic embeddings** — Local BGE-small-en-v1.5 (384d) for thought similarity, stagnation, and contradiction detection
+- **6D quality metrics** — TTR clarity, clause depth, structural logic, noun breadth, semantic relevance, and concrete actionability
+- **Anti-hallucination** — Assumption tracking, contradiction detection with negation polarity, confidence calibration, Chain-of-Verification
+- **Metacognitive analysis** — Filler detection, claim density scoring, fallacy detection, dialectical reasoning checks
 - **Bias detection** — Identifies 5 cognitive biases with actionable suggestions
-- **Graph-of-Thought** — DAG edge registry for branching, revision, and merge tracking
-- **Anti-overthinking** — Shannon entropy stability and EWMA stagnation detection
-- **Fatigue detection** — Consecutive quality drop monitoring with actionable suggestions
+- **Graph-of-Thought** — DAG edge registry with topology analysis (orphan detection, linearity ratio)
+- **Anti-overthinking** — EWMA stagnation detection, early stopping signals, fatigue monitoring
 
 | Feature | Cuba-Thinking | Basic Thinking MCPs |
 |---------|:------------:|:-------------------:|
 | 6-stage cognitive engine (Bloom's) | ✅ | ❌ |
 | Semantic embeddings (BGE-384d neural) | ✅ | ❌ |
 | 6D quality metrics + EWMA reward | ✅ | 4D or less |
+| TTR clarity (Templin 1957) | ✅ | ❌ |
+| Clause depth analysis (Hunt 1965) | ✅ | ❌ |
+| Structural logic scoring (ROSCOE) | ✅ | ❌ |
+| Claim density scoring | ✅ | ❌ |
+| Metacognitive filler detection | ✅ | ❌ |
+| Fallacy detection (hasty generalization) | ✅ | ❌ |
+| Dialectical reasoning check | ✅ | ❌ |
+| Confidence variance tracking (Shewhart) | ✅ | ❌ |
 | Shannon Entropy stability | ✅ | ❌ |
-| Graph-of-Thought (DAG edges) | ✅ | ❌ |
+| Graph-of-Thought with topology analysis | ✅ | ❌ |
 | Chain-of-Verification (CoVe) | ✅ | ❌ |
-| Anti-overthinking detection | ✅ | ❌ |
+| Contradiction detection + negation polarity | ✅ | ❌ |
+| Anti-overthinking + early stopping | ✅ | ❌ |
 | Fatigue monitoring | ✅ | ❌ |
 | Assumption tracking + dedup | ✅ | ❌ |
-| Contradiction detection | ✅ | ❌ |
 | Confidence calibration per stage | ✅ | ❌ |
 | 5-bias detector | ✅ | ❌ |
 | Stagnation detection | ✅ | ❌ |
+| Reasoning type classification | ✅ | ❌ |
+| Session statistics aggregation | ✅ | ❌ |
 | Graceful degradation | ✅ | ❌ |
 | Dependencies | **4** | 13+ |
 
@@ -76,8 +86,6 @@ Zero environment variables. Zero configuration. It just works.
 ## The Tool
 
 ### `cuba_thinking`
-
-Advanced sequential thinking with 6-stage cognitive engine, semantic embeddings, anti-hallucination (assumption tracking, contradiction detection, confidence calibration), 6D quality metrics with trends, and bias detection.
 
 **Required parameters:**
 
@@ -131,94 +139,106 @@ Each stage boosts different quality dimensions. DEFINE boosts **Clarity** (3×),
 
 ---
 
-## Mathematical Foundations
+## 6D Quality Metrics
 
-Every formula is **verified with Wolfram Alpha** against analytical solutions.
+Each dimension uses empirically validated linguistic measures:
 
-### Shannon Entropy — Shannon (1948)
+| Dimension | Method | Basis |
+|-----------|--------|-------|
+| **Clarity** | Type-Token Ratio (unique/total words) + sentence diversity | Templin (1957) |
+| **Depth** | Subordinate clause counting + causal keyword density | Hunt (1965) |
+| **Breadth** | Unique noun ratio + topic diversity markers | Lexical diversity |
+| **Logic** | Connective type diversity + conditional chain depth + conclusion presence | ROSCOE (Golovneva et al., 2023) |
+| **Relevance** | Cosine similarity to first thought (embedding) or keyword fallback | Salton (1975) |
+| **Actionability** | Imperative verbs + units/measurements + specificity vs. vagueness | GRACE (Guan et al., 2024) |
+
+### EWMA Step Reward — Roberts (1959)
+
+```
+EWMA_t = α_n · reward_t + (1 - α_n) · EWMA_{t-1}
+α_n = 2 / (n + 1)        — adaptive smoothing
+reward = 0.6·quality + 0.3·coherence + 0.1·(1 - contradictions/t)
+```
+
+Adaptive α reduces sensitivity to noise as the session progresses while maintaining fast initial responsiveness.
+
+### Shannon Entropy Stability — Shannon (1948)
 
 ```
 H = -Σ pᵢ·log₂(pᵢ)   where pᵢ = scoreᵢ / Σscores
 stability = H / H_max  where H_max = log₂(6)
 ```
 
-Measures reasoning balance across 6D quality dimensions. Stability < 0.60 triggers a warning that reasoning is lopsided (e.g., high clarity but zero depth).
+Stability < 0.60 triggers a warning that reasoning is lopsided.
 
-**Verification:** Scores `{0.6, 0.55, 0.4, 0.57, 1.0, 0.4}` → `H = 2.5077, stability = 0.9701` ✅
-
-### EWMA Step Reward — Roberts (1959)
-
-```
-EWMA_t = α · reward_t + (1 - α) · EWMA_{t-1}   where α = 0.3
-reward = 0.6·quality + 0.3·coherence + 0.1·(1 - contradictions/t)
-```
-
-O(1) step-level reward signal that exponentially weights recent quality. More responsive than OLS for detecting rapid quality changes.
-
-**Verification:** α=0.3 decay chain: `60% → 53% → 49% → 42% → 36% → 28%` ✅
-
-### Cosine Similarity — Salton (1975)
-
-```
-cos(A, B) = (A · B) / (‖A‖ × ‖B‖)
-```
-
-Used for semantic similarity between thought embeddings (384-dimensional BGE vectors) and keyword-based fallback (TF frequency vectors).
-
-**Verification:** `cos([1,2,3], [4,5,6]) = 32/√1078 ≈ 0.9746` ✅ Wolfram Alpha confirmed.
-
-### OLS Linear Regression — Gauss (1795)
+### OLS Trend Analysis — Gauss (1795)
 
 ```
 slope = (n·Σxy − Σx·Σy) / (n·Σx² − (Σx)²)
 ```
 
-Trend analysis over a sliding window of quality scores. `slope > 0.02` → improving, `< -0.02` → declining.
-
-**Verification:** `y = 0.3 + 0.1x` → `slope = 0.1` ✅ Wolfram Alpha confirmed.
-
-### Weighted Mean — Quality Overall
-
-```
-overall = Σ(score_i × weight_i) / Σ(weight_i)
-```
-
-Stage-specific weights boost relevant dimensions. DEFINE: Clarity×3, ANALYZE: Depth×3, SYNTHESIZE: Actionability×3.
-
-**Verification:** DEFINE scores `[0.8, 0.5, 0.4, 0.6, 0.7, 0.3]` → `0.6222` ✅ Wolfram Alpha confirmed.
+`slope > 0.02` → 📈 improving, `< -0.02` → 📉 declining.
 
 ---
 
 ## Anti-Hallucination
 
-Four verification layers that require zero LLM calls:
+Five verification layers that require zero LLM calls:
 
 ### 1. Assumption Tracking
 
-Accumulates and deduplicates assumptions across all thoughts. Semantic deduplication when embeddings are available (cosine > 0.85 → duplicate), exact match otherwise.
+Accumulates and deduplicates assumptions across all thoughts. Semantic deduplication when embeddings are available (cosine > 0.85 → duplicate), keyword fallback otherwise.
 
-### 2. Contradiction Detection
+### 2. Contradiction Detection + Negation Polarity
 
-Compares each new thought against all previous thoughts for semantic similarity + negation patterns:
+Compares each new thought against all previous thoughts for semantic similarity combined with negation polarity analysis:
 
 ```
-contradiction = similarity(A, B) > 0.7 AND has_negation_difference(A, B)
+contradiction = similarity(A, B) > 0.6
+                AND |negations(A) - negations(B)| ≥ 2
 ```
+
+Negation markers: `not`, `no`, `never`, `doesn't`, `can't`, `without`, `none`, etc. The polarity diff threshold filters false positives from merely similar (but non-contradictory) thoughts.
 
 ### 3. Confidence Calibration
 
-Flags overconfidence (high confidence in early stages) and underconfidence (low confidence in late stages).
+Flags overconfidence (high confidence in early stages) and underconfidence (low confidence in late stages) with per-stage expected ranges.
 
 ### 4. Chain-of-Verification (CoVe) — Dhuliawala et al. (2023)
 
-At critical stage transitions (`ANALYZE→HYPOTHESIZE` and `HYPOTHESIZE→SYNTHESIZE`), automatically generates verification questions from unverified assumptions:
+At critical stage transitions, generates targeted verification questions:
+- **Quantitative assumptions** (containing numbers/percentages): "What measurement confirms: ...?"
+- **Qualitative assumptions**: "What evidence supports: ...?"
+
+### 5. Claim Density Scoring
+
+Counts verifiable assertions per sentence (percentages, large numbers, absolutes, causal claims). High density signals text that needs more verification.
+
+---
+
+## Metacognitive Analysis
+
+### Metacognitive Filler Detection — Flavell (1979)
+
+Identifies "thinking about thinking" patterns that consume tokens without substance:
 
 ```
-Assumption: "Redis is available"  → ❓ Has "Redis is available" been confirmed?
-Assumption: "Hit ratio > 80%"    → ❓ What evidence supports: "Hit ratio > 80%"?
+filler_ratio = filler_words / total_words
 ```
 
-Template-based question generation — no external LLM calls needed.
+Patterns: "let me think", "well", "hmm", "I'm not sure", "maybe I should". Warning triggers at > 30% filler ratio.
+
+### Fallacy Detection
+
+Detects hasty generalization: absolute claims (`always`, `never`, `every`, `all`) near singular evidence (`one`, `single`, `this example`).
+
+### Dialectical Reasoning — Stage-Aware
+
+In VERIFY and SYNTHESIZE stages, checks for counter-argument markers (`however`, `on the other hand`, `admittedly`, `despite`). Absence triggers a warning to consider opposing viewpoints before finalizing conclusions.
+
+### Reasoning Type Classification
+
+Classifies dominant reasoning pattern (deductive, inductive, or abductive) and provides actionable feedback when reasoning is imbalanced.
 
 ---
 
@@ -238,25 +258,42 @@ Graph coherence is computed as the average similarity across all edges:
 coherence = (1/|E|) · Σ sim(thought_u, thought_v)
 ```
 
+### Topology Analysis
+
+- **Orphan detection**: Counts thoughts with no incoming or outgoing edges
+- **Linearity ratio**: `unique_nodes_with_edges / total_thoughts`. Low ratio indicates unexplored branches
+
+---
+
+## Confidence Variance — Shewhart (1931)
+
+Tracks standard deviation of confidence values across the session:
+
+```
+σ = sqrt(Σ(x_i - μ)² / n)
+```
+
+σ > 0.25 triggers a stability warning — large confidence swings indicate the agent is oscillating rather than converging.
+
 ---
 
 ## Anti-Overthinking — DeepSeek (2025)
 
-Based on DeepSeek's "Thoughtology" research: reasoning quality follows an inverted-U curve. Beyond the optimal point, rumination degrades quality.
+Based on DeepSeek's "Thoughtology" research: reasoning quality follows an inverted-U curve.
 
 ```
 stagnation = true if EWMA_diff < 2% for 3+ consecutive thoughts
 ```
 
-When detected:
-- Emits `⚡ Stagnation detected — consider concluding`
-- In `fast` budgetMode: auto-reduces `totalThoughts`
+### Early Stopping Signal
+
+When quality > 0.7 and progress > 70%, suggests concluding. In `fast` budgetMode, auto-reduces `totalThoughts`.
 
 ---
 
-## Fatigue Detection — Flavell (1979)
+## Fatigue Detection
 
-Monitors consecutive quality drops to detect cognitive fatigue:
+Monitors consecutive quality drops:
 
 | Consecutive Drops | Suggested Action |
 |:-----------------:|:----------------:|
@@ -266,13 +303,13 @@ Monitors consecutive quality drops to detect cognitive fatigue:
 
 ---
 
-## Bias Detection
+## Bias Detection — Kahneman & Tversky (1974)
 
 Identifies 5 cognitive biases with actionable suggestions:
 
 | Bias | Detection Method | Trigger |
-|------|:---------------:|---------| 
-| **Confirmation** | History similarity > 0.7 for recent thoughts | Repeatedly reinforcing same conclusion |
+|------|:---------------:|---------|
+| **Confirmation** | History similarity > 0.7 | Repeatedly reinforcing same conclusion |
 | **Anchoring** | First quantitative reference dominates | Over-reliance on initial data point |
 | **Availability** | Recency weighting of examples | Using recent/memorable examples disproportionately |
 | **Overconfidence** | High confidence early in reasoning | Confidence > 0.8 before 50% progress |
@@ -282,16 +319,54 @@ Identifies 5 cognitive biases with actionable suggestions:
 
 ## Silent by Default
 
-All features follow the **silent by default** principle — they only appear in output when they detect actionable conditions:
+All features follow the **silent by default** principle — they only appear when they detect actionable conditions:
 
 | Feature | Only Appears When |
 |---------|------------------|
 | Shannon Stability | < 60% (unbalanced reasoning) |
 | EWMA Reward | Always (core quality metric) |
+| Claim Density | Claims detected in text |
+| Metacognition Warning | > 30% filler ratio |
+| Fallacy Warning | Hasty generalization detected |
+| Dialectical Warning | VERIFY/SYNTHESIZE without counter-arguments |
+| Confidence Variance | σ > 0.25 |
 | Anti-Overthinking | 3+ stagnant thoughts |
+| Early Stopping | Quality > 0.7 and progress > 70% |
 | CoVe Checkpoint | Stage transitions with open assumptions |
 | Fatigue | 3+ consecutive quality drops |
 | Graph | When edges exist |
+| Topology Orphans | Orphan thoughts detected |
+
+---
+
+## Test Results
+
+```
+Test Suites: 7 passed, 7 total
+Tests:       159 passed, 159 total
+Failures:    0
+```
+
+### Coverage by Category
+
+| Category | Tests | Coverage |
+|----------|:-----:|----------|
+| Quality Metrics (6D + EWMA + Shannon) | 42 | TTR, clause depth, structural logic, actionability, EWMA reward, entropy stability |
+| Anti-Hallucination (contradictions + CoVe) | 28 | Assumption tracking, negation polarity, confidence calibration, CoVe questions |
+| Cognitive Processor (orchestration) | 35 | Full pipeline integration, graph edges, fatigue, overthinking |
+| Stage Engine (6-stage FSM) | 24 | Auto-detection, transitions, weights, confidence ranges |
+| Embedding Service (BGE + fallback) | 18 | Cosine similarity, keyword fallback, cache, graceful degradation |
+| Bias Detector (5 biases) | 12 | Confirmation, anchoring, availability, overconfidence, sunk cost |
+
+### Nemesis Protocol (Adversarial Testing)
+
+| Level | Tests | Description |
+|-------|:-----:|-------------|
+| 🟢 Normal | 25 | Valid inputs, happy paths |
+| 🟡 Pessimistic | 14 | Empty strings, undefined, single words, no edges |
+| 🔴 Extreme | 12 | Unicode attacks, SQL injection, XSS payloads, 5000-repeat strings, path traversal |
+
+**Key invariant**: All quality scores stay in [0, 1] range for ALL inputs including adversarial payloads.
 
 ---
 
@@ -302,16 +377,16 @@ cuba-thinking/
 ├── package.json
 ├── tsconfig.json
 └── src/
-    ├── index.ts                     # MCP server entry point
-    ├── types.ts                     # Zod schemas + TypeScript interfaces
-    ├── formatter.ts                 # Structured response rendering
+    ├── index.ts                        # MCP server entry point
+    ├── types.ts                        # Zod schemas + TypeScript interfaces
+    ├── formatter.ts                    # Structured response rendering
     └── services/
-        ├── cognitive-processor.ts   # Central orchestrator
-        ├── embedding.service.ts     # BGE-384d + keyword fallback
-        ├── stage-engine.service.ts  # 6-stage FSM
-        ├── quality-metrics.service.ts # 6D + EWMA + Shannon entropy
-        ├── anti-hallucination.service.ts # 4-layer verification + CoVe
-        └── bias-detector.service.ts # 5-bias detection
+        ├── cognitive-processor.ts      # Central orchestrator
+        ├── embedding.service.ts        # BGE-384d + keyword fallback
+        ├── stage-engine.service.ts     # 6-stage FSM
+        ├── quality-metrics.service.ts  # 6D + EWMA + metacognitive analysis
+        ├── anti-hallucination.service.ts # 5-layer verification + CoVe
+        └── bias-detector.service.ts    # 5-bias detection
 ```
 
 ### Dependencies (4 total)
@@ -329,45 +404,17 @@ If the embedding model fails to load, Cuba-Thinking automatically falls back to 
 
 ---
 
-## How It Works in Practice
+## Mathematical Verification
 
-### 1. Structured reasoning with quality tracking
+Every formula is verified with Wolfram Alpha against analytical solutions:
 
-```
-Agent: I need to analyze the caching options...
-→ cuba_thinking(thought: "...", stage: "ANALYZE", confidence: 0.6)
-← Stage: ANALYZE (50% progress)
-  Quality: Clarity=0.72, Depth=0.85 (boosted 3×)
-  EWMA Reward: 67%
-  Trend: improving 📈
-```
-
-### 2. CoVe catches unverified assumptions at stage transitions
-
-```
-Stage transition: ANALYZE → HYPOTHESIZE
-← ── Verification Checkpoint (ANALYZE→HYPOTHESIZE) ──────
-   Open assumptions: 3
-   ❓ Has "Redis is available" been confirmed?
-   ❓ What evidence supports: "Hit ratio > 80%"?
-```
-
-### 3. Graph tracks reasoning structure
-
-```
-← ── Graph (3 edges) ──────
-   1 →[extends]→ 2
-   1 →[merges]→ 2
-   1 →[revises]→ 3
-   Coherence: 72%
-```
-
-### 4. Anti-overthinking prevents rumination
-
-```
-← ⚡ Stagnation detected: 3 consecutive thoughts with <2% quality improvement. Consider concluding.
-← 🧠 Fatigue: 3 consecutive quality drops → step_back
-```
+| Formula | Input | Expected | Result |
+|---------|-------|----------|--------|
+| Shannon Entropy | `{0.6, 0.55, 0.4, 0.57, 1.0, 0.4}` | `H = 2.5077, stability = 0.9701` | ✅ |
+| EWMA decay (α=0.3) | 5-step chain | `60% → 53% → 49% → 42% → 36% → 28%` | ✅ |
+| Cosine similarity | `[1,2,3]·[4,5,6]` | `32/√1078 ≈ 0.9746` | ✅ |
+| OLS slope | `y = 0.3 + 0.1x` | `slope = 0.1` | ✅ |
+| Weighted mean (DEFINE) | `[0.8, 0.5, 0.4, 0.6, 0.7, 0.3]` | `0.6222` | ✅ |
 
 ---
 
@@ -387,16 +434,21 @@ Together, they give AI agents **memory + reasoning** — the two fundamental cap
 | # | Citation | Used For |
 |---|----------|----------|
 | 1 | Shannon (1948). "A Mathematical Theory of Communication" | Entropy stability |
-| 2 | Besta et al. (2024). "Graph of Thoughts" — ETH Zurich | DAG structure |
-| 3 | Dhuliawala et al. (2023). "CoVe Reduces Hallucination" — Meta AI | Verification |
-| 4 | Lightman et al. (2023). "Let's Verify Step by Step" — OpenAI | Step reward |
-| 5 | DeepSeek (2025). "Thoughtology" | Anti-overthinking |
-| 6 | Flavell (1979). "Metacognition and Cognitive Monitoring" | Fatigue detection |
-| 7 | Roberts (1959). "EWMA Control Charts" | EWMA smoothing |
+| 2 | Besta et al. (2024). "Graph of Thoughts" — ETH Zurich | DAG structure + topology |
+| 3 | Dhuliawala et al. (2023). "CoVe Reduces Hallucination" — Meta AI | Verification questions |
+| 4 | Lightman et al. (2023). "Let's Verify Step by Step" — OpenAI | Step reward (EWMA) |
+| 5 | DeepSeek (2025). "Thoughtology" | Anti-overthinking + early stopping |
+| 6 | Flavell (1979). "Metacognition and Cognitive Monitoring" | Metacognitive filler detection |
+| 7 | Roberts (1959). "EWMA Control Charts" | Adaptive EWMA smoothing |
 | 8 | Anderson & Krathwohl (2001). "Revised Bloom's Taxonomy" | Cognitive stages |
 | 9 | Salton (1975). "Vector Space Model" | Cosine similarity |
-| 10 | Gauss (1795). "Method of Least Squares" | OLS regression |
+| 10 | Gauss (1795). "Method of Least Squares" | OLS trend analysis |
 | 11 | Kahneman & Tversky (1974). "Judgment Under Uncertainty" | Bias detection |
+| 12 | Templin (1957). "Certain Language Skills in Children" | TTR clarity metric |
+| 13 | Hunt (1965). "Grammatical Structures" | Clause depth analysis |
+| 14 | Golovneva et al. (2023). "ROSCOE: Reasoning Scores" | Structural logic evaluation |
+| 15 | Guan et al. (2024). "GRACE: Generative Reasoning Assessment" | Actionability scoring |
+| 16 | Shewhart (1931). "Economic Control of Quality" | Confidence variance |
 
 ---
 

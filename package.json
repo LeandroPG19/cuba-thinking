@@ -1,6 +1,6 @@
 {
   "name": "cuba-thinking",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Advanced sequential thinking MCP with semantic embeddings, anti-hallucination, and cognitive stage engine",
   "license": "MIT",
   "author": "Cuba MCP Team",
@@ -23,9 +23,8 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.15.1",
     "@huggingface/transformers": "^3.4.1",
-    "chalk": "^5.3.0",
+    "@modelcontextprotocol/sdk": "^1.15.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

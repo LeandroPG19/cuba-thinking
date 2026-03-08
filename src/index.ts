@@ -13,7 +13,7 @@ import { CognitiveProcessor } from './services/cognitive-processor.js';
 import { formatResponse } from './formatter.js';
 
 const SERVER_NAME = 'cuba-thinking';
-const SERVER_VERSION = '1.0.0';
+const SERVER_VERSION = '1.0.1';
 const processor = new CognitiveProcessor();
 const cubaTool: Tool = {
   name: 'cuba_thinking',
@@ -156,7 +156,12 @@ startServer().catch((error) => {
   process.exit(1);
 });
 process.on('SIGINT', () => {
-  console.error('[cuba-thinking] Shutting down...');
+  console.error('[cuba-thinking] Shutting down (SIGINT)...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.error('[cuba-thinking] Shutting down (SIGTERM)...');
   process.exit(0);
 });
 

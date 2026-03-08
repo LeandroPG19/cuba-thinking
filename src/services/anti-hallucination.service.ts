@@ -30,7 +30,7 @@ export class AntiHallucinationService {
   async trackAssumptions(
     assumptions: string[] | undefined,
     thoughtNumber: number,
-    embeddings: EmbeddingService,
+    _embeddings: EmbeddingService,
   ): Promise<string[]> {
     if (!assumptions || assumptions.length === 0) {
       return this.allAssumptions.map((a) => a.text);
@@ -40,18 +40,14 @@ export class AntiHallucinationService {
       const trimmed = assumption.trim();
       if (!trimmed) continue;
       let isDuplicate = false;
-      if (embeddings.isAvailable) {
-        for (const existing of this.allAssumptions) {
-          const sim = keywordSimilarity(trimmed, existing.text);
-          if (sim > ASSUMPTION_DEDUP_THRESHOLD) {
-            isDuplicate = true;
-            break;
-          }
+
+
+      for (const existing of this.allAssumptions) {
+        const sim = keywordSimilarity(trimmed, existing.text);
+        if (sim > ASSUMPTION_DEDUP_THRESHOLD) {
+          isDuplicate = true;
+          break;
         }
-      } else {
-        isDuplicate = this.allAssumptions.some(
-          (a) => a.text.toLowerCase() === trimmed.toLowerCase(),
-        );
       }
 
       if (!isDuplicate) {
@@ -62,7 +58,7 @@ export class AntiHallucinationService {
     return this.allAssumptions.map((a) => a.text);
   }
 
-  
+  // Enhanced contradiction detection with semantic polarity
   async detectContradictions(
     thought: string,
     thoughtNumber: number,
@@ -73,6 +69,7 @@ export class AntiHallucinationService {
 
     const contradictions: Contradiction[] = [];
     const currentLower = thought.toLowerCase();
+    const currentNegScore = countNegations(currentLower);
     for (const [prevNum, prevText] of this.thoughtTexts.entries()) {
       if (prevNum === thoughtNumber) continue;
       let sim: number;
@@ -82,12 +79,15 @@ export class AntiHallucinationService {
         sim = keywordSimilarity(thought, prevText);
       }
       if (sim > CONTRADICTION_SIM_THRESHOLD) {
-        if (hasNegationDifference(currentLower, prevText.toLowerCase())) {
+        const prevNegScore = countNegations(prevText.toLowerCase());
+        // Semantic polarity check
+        const polarityDiff = Math.abs(currentNegScore - prevNegScore);
+        if (polarityDiff >= 1 || hasNegationDifference(currentLower, prevText.toLowerCase())) {
           contradictions.push({
             thoughtA: prevNum,
             thoughtB: thoughtNumber,
             similarity: Math.round(sim * 100) / 100,
-            description: `Potential contradiction between thought #${prevNum} and #${thoughtNumber} (similarity: ${(sim * 100).toFixed(0)}% with negation detected)`,
+            description: `Potential contradiction between thought #${prevNum} and #${thoughtNumber} (similarity: ${(sim * 100).toFixed(0)}% with negation polarity diff: ${polarityDiff})`,
           });
         }
       }
@@ -175,6 +175,7 @@ export class AntiHallucinationService {
     return this.allAssumptions.map(a => a.text);
   }
 
+  // CoVe claim-specific questions
   generateVerificationCheckpoint(
     thoughtNumber: number,
     previousStage: string,
@@ -186,14 +187,12 @@ export class AntiHallucinationService {
     const open = this.getOpenAssumptions();
     if (open.length === 0) return undefined;
     const questions = open.slice(0, 5).map(a => {
-      const lower = a.toLowerCase();
-      if (lower.includes('available') || lower.includes('exists')) {
-        return `Has "${a}" been confirmed?`;
+      // Classify question type
+      const isQuantitative = /\d/.test(a) || /\b(more|less|greater|fewer|faster|slower|higher|lower)\b/i.test(a);
+      if (isQuantitative) {
+        return `What specific data/measurement validates: "${a}"?`;
       }
-      if (lower.includes('>') || lower.includes('<') || lower.includes('%')) {
-        return `What evidence supports: "${a}"?`;
-      }
-      return `Is this assumption verified: "${a}"?`;
+      return `What evidence or source confirms: "${a}"?`;
     });
     return { triggeredAt: thoughtNumber, stageTransition: transition, openAssumptions: open, suggestedQuestions: questions };
   }
@@ -216,4 +215,14 @@ function hasNegationDifference(textA: string, textB: string): boolean {
     if (wordsB.has(word)) negB++;
   }
   return Math.abs(negA - negB) >= 1;
+}
+
+// Count negation markers for polarity scoring
+function countNegations(text: string): number {
+  const words = new Set(text.split(/\s+/));
+  let count = 0;
+  for (const word of NEGATION_WORDS) {
+    if (words.has(word)) count++;
+  }
+  return count;
 }

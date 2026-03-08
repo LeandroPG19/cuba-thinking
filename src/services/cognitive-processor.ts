@@ -59,24 +59,19 @@ export class CognitiveProcessor {
     );
     const qualityTrend = this.quality.getTrend();
     const stability = this.quality.stabilityScore(qualityScores);
-    const coherence = this.embeddings.isAvailable && thoughtNumber > 1
-      ? this.embeddings.relevance(thoughtNumber) ?? 0.5
-      : 0.5;
-    const contradictionCount = (await this.antiHallucination.detectContradictions(
+    const contradictions = await this.antiHallucination.detectContradictions(
       thought, thoughtNumber, this.embeddings,
-    )).length;
-    const contradictionRatio = thoughtNumber > 0 ? contradictionCount / thoughtNumber : 0;
+    );
+    const coherence = this.embeddings.isAvailable && thoughtNumber > 1
+      ? this.embeddings.similarity(thoughtNumber - 1, thoughtNumber)
+      : 0.5;
+    const contradictionRatio = thoughtNumber > 0 ? contradictions.length / thoughtNumber : 0;
     const ewmaReward = this.quality.updateEwma(
       qualityScores.overall, coherence, contradictionRatio,
     );
     const overthinkingWarning = this.quality.checkOverthinking(thoughtNumber);
     const assumptions = await this.antiHallucination.trackAssumptions(
       input.assumptions,
-      thoughtNumber,
-      this.embeddings,
-    );
-    const contradictions = await this.antiHallucination.detectContradictions(
-      thought,
       thoughtNumber,
       this.embeddings,
     );
@@ -120,11 +115,26 @@ export class CognitiveProcessor {
     }
     this.thoughtHistory[thoughtNumber - 1] = thought;
 
+
+    const claimDensityResult = this.quality.measureClaimDensity(thought);
+    const metacogResult = this.quality.measureMetacognition(thought);
+    const fallacyWarning = this.quality.detectFallacies(thought);
+    const dialecticalResult = this.quality.measureDialectical(thought, stageInfo.current);
+    const reasoningResult = this.quality.detectReasoningType(thought);
+    const earlyStopSuggestion = this.quality.checkEarlyStopping(
+      thoughtNumber, totalThoughts, stageInfo.progress, qualityScores.overall,
+    );
+    const confidenceVariance = this.quality.trackConfidence(input.confidence);
+    const topologyResult = this.quality.analyzeTopology(this.edges, thoughtNumber);
+
     let adjustedTotal = totalThoughts;
     if (input.needsMoreThoughts) {
       adjustedTotal = Math.max(totalThoughts, thoughtNumber + 2);
     }
     if (overthinkingWarning && input.budgetMode === 'fast') {
+      adjustedTotal = Math.min(adjustedTotal, thoughtNumber + 1);
+    }
+    if (earlyStopSuggestion && input.budgetMode === 'fast') {
       adjustedTotal = Math.min(adjustedTotal, thoughtNumber + 1);
     }
 
@@ -152,6 +162,20 @@ export class CognitiveProcessor {
       relevanceScore: relevanceScore !== undefined
         ? Math.round(relevanceScore * 100) / 100
         : undefined,
+  
+      claimDensity: claimDensityResult.density > 0 ? claimDensityResult.density : undefined,
+      claimCount: claimDensityResult.claimCount > 0 ? claimDensityResult.claimCount : undefined,
+      metacogRatio: metacogResult.ratio > 0 ? metacogResult.ratio : undefined,
+      metacogWarning: metacogResult.warning,
+      fallacyWarning,
+      dialecticalScore: dialecticalResult.score < 1 ? dialecticalResult.score : undefined,
+      dialecticalWarning: dialecticalResult.warning,
+      reasoningType: reasoningResult.dominant !== 'mixed' ? reasoningResult.dominant : undefined,
+      reasoningFeedback: reasoningResult.feedback,
+      earlyStopSuggestion,
+      confidenceVariance,
+      topologyOrphanCount: topologyResult.orphanCount > 0 ? topologyResult.orphanCount : undefined,
+      topologyLinearRatio: topologyResult.linearRatio !== 1 ? topologyResult.linearRatio : undefined,
     };
   }
 
@@ -184,7 +208,7 @@ export class CognitiveProcessor {
   private computeFatigue(currentQuality: number): FatigueReport {
     if (currentQuality < this.lastQuality) {
       this.consecutiveQualityDrops++;
-    } else {
+    } else if (currentQuality > this.lastQuality) {
       this.consecutiveQualityDrops = 0;
     }
     this.lastQuality = currentQuality;

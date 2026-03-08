@@ -130,4 +130,18 @@ export interface CubaThinkingOutput {
   biasDetected?: string;
   biasSuggestion?: string;
   relevanceScore?: number;
+
+  claimDensity?: number;
+  claimCount?: number;
+  metacogRatio?: number;
+  metacogWarning?: string;
+  fallacyWarning?: string;
+  dialecticalScore?: number;
+  dialecticalWarning?: string;
+  reasoningType?: string;
+  reasoningFeedback?: string;
+  earlyStopSuggestion?: string;
+  confidenceVariance?: number;
+  topologyOrphanCount?: number;
+  topologyLinearRatio?: number;
 }

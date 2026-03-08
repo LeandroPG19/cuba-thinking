@@ -114,7 +114,39 @@ export function formatResponse(output: CubaThinkingOutput): string {
     if (output.graphCoherence !== undefined) {
       lines.push(`  Coherence: ${(output.graphCoherence * 100).toFixed(0)}%`);
     }
+    if (output.topologyOrphanCount !== undefined) {
+      lines.push(`  ⚠️ Orphan thoughts: ${output.topologyOrphanCount}`);
+    }
     lines.push('');
+  }
+
+
+  if (output.claimDensity !== undefined) {
+    lines.push(`📊 Claim density: ${output.claimDensity.toFixed(2)} claims/sentence (${output.claimCount ?? 0} verifiable assertions)`);
+  }
+
+  if (output.metacogWarning) {
+    lines.push(`💭 ${output.metacogWarning}`);
+  }
+
+  if (output.fallacyWarning) {
+    lines.push(`⚠️ ${output.fallacyWarning}`);
+  }
+
+  if (output.dialecticalWarning) {
+    lines.push(`⚖️ ${output.dialecticalWarning}`);
+  }
+
+  if (output.reasoningFeedback) {
+    lines.push(`🧩 ${output.reasoningFeedback}`);
+  }
+
+  if (output.earlyStopSuggestion) {
+    lines.push(`🏁 ${output.earlyStopSuggestion}`);
+  }
+
+  if (output.confidenceVariance !== undefined) {
+    lines.push(`📏 Confidence variance: σ=${output.confidenceVariance.toFixed(2)} — reasoning stability is low`);
   }
 
   if (output.stage.suggestedAction) {
@@ -127,7 +159,8 @@ export function formatResponse(output: CubaThinkingOutput): string {
 }
 
 function bar(value: number): string {
-  const filled = Math.round(value * 10);
+  const clamped = Math.max(0, Math.min(1, value));
+  const filled = Math.round(clamped * 10);
   const empty = 10 - filled;
   return `[${'█'.repeat(filled)}${'░'.repeat(empty)}]`;
 }

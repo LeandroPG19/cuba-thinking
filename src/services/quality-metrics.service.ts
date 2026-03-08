@@ -3,14 +3,55 @@ import { STAGE_QUALITY_WEIGHTS } from './stage-engine.service.js';
 
 const MIN_TREND_POINTS = 3;
 const TREND_WINDOW = 10;
-const EWMA_ALPHA = 0.3;
 const STAGNATION_EPSILON = 0.02;
 const STAGNATION_CONSECUTIVE = 3;
+
+// Word-boundary regex helper
+const WB = (word: string): RegExp => new RegExp(`\\b${word}\\b`, 'i');
+
+// Claim density patterns
+const CLAIM_PATTERNS = [
+  /\b\d+(\.\d+)?%/g,                           // Percentages
+  /\b\d{2,}\b/g,                                // Numbers ≥ 2 digits
+  /\b(always|never|all|none|every|must)\b/gi,   // Absolutes
+  /\b(proves?|confirms?|demonstrates?|shows?)\b/gi, // Causal claims
+];
+
+// Metacognitive filler patterns
+const METACOG_PATTERNS = [
+  /\b(let me think|let me consider|I need to think|I should think)\b/gi,
+  /\b(hmm|well|okay so|alright)\b/gi,
+  /\b(on second thought|wait|actually no)\b/gi,
+  /\b(I'm not sure|I think maybe|perhaps I should)\b/gi,
+];
+
+// Fallacy patterns
+const HASTY_ABSOLUTES = /\b(always|never|all|every|none|no one)\b/i;
+const HASTY_SINGULAR = /\b(one|single|this example|this case|anecdot)\b/i;
+
+// Logic connective types for diversity
+const LOGIC_CONNECTIVES = [
+  'because', 'therefore', 'thus', 'hence', 'since',
+  'implies', 'if', 'then', 'consequently', 'so',
+  'given that', 'it follows', 'as a result',
+] as const;
+const CONCLUSION_MARKERS = /\b(therefore|thus|in conclusion|finally|the answer is|hence|to summarize)\b/i;
+
+// Actionability patterns
+const IMPERATIVE_VERBS = /\b(use|implement|create|build|apply|test|verify|ensure|add|remove|check|configure|install|run|execute|avoid|consider)\b/gi;
+const VAGUE_PHRASES = /\b(somehow|maybe|some kind of|in some way|things|stuff|might work|could be)\b/gi;
+const SPECIFICITY_PATTERNS = [
+  /\b\d+(\.\d+)?\s*(ms|mb|gb|kb|s|%|px|rem|em)\b/gi,  // Units
+  /[A-Za-z]+\.[a-z]{2,4}\b/g,                           // File extensions
+  /\/[a-z_/]+/gi,                                        // File paths
+];
 
 export class QualityMetricsService {
   private history: number[] = [];
   private ewma: number | null = null;
+  private ewmaCount = 0;
   private consecutiveStagnant = 0;
+  private confidenceHistory: number[] = [];
 
   
   calculate(
@@ -88,12 +129,44 @@ export class QualityMetricsService {
     return Hmax > 0 ? round(H / Hmax) : 0;
   }
 
+  // Adaptive EWMA: α_n = 2 / (n + 1)
   updateEwma(quality: number, coherence: number, contradictionRatio: number): number {
+    this.ewmaCount++;
+    const alpha = 2 / (this.ewmaCount + 1);
     const reward = 0.6 * quality + 0.3 * coherence + 0.1 * (1 - contradictionRatio);
     this.ewma = this.ewma === null
       ? reward
-      : EWMA_ALPHA * reward + (1 - EWMA_ALPHA) * this.ewma;
+      : alpha * reward + (1 - alpha) * this.ewma;
     return round(this.ewma);
+  }
+
+  // Confidence variance tracking (Shewhart)
+  trackConfidence(confidence: number | undefined): number | undefined {
+    if (confidence === undefined) return undefined;
+    this.confidenceHistory.push(confidence);
+    if (this.confidenceHistory.length < 3) return undefined;
+    const mean = this.confidenceHistory.reduce((a, b) => a + b, 0) / this.confidenceHistory.length;
+    const variance = this.confidenceHistory.reduce((s, v) => s + (v - mean) ** 2, 0) / this.confidenceHistory.length;
+    const stdDev = Math.sqrt(variance);
+    return stdDev > 0.25 ? round(stdDev) : undefined;
+  }
+
+  // Early stopping signal
+  checkEarlyStopping(
+    thoughtNumber: number,
+    totalThoughts: number,
+    stageProgress: number,
+    qualityOverall: number,
+  ): string | undefined {
+    if (thoughtNumber < 3) return undefined;
+    const ewmaConverged = this.ewma !== null && this.history.length >= 3 &&
+      Math.abs(this.history[this.history.length - 1] - this.history[this.history.length - 2]) < 0.01;
+    const stageNearEnd = stageProgress >= 0.83;
+    const qualityHigh = qualityOverall >= 0.75;
+    if (ewmaConverged && stageNearEnd && qualityHigh && thoughtNumber >= totalThoughts - 1) {
+      return `Early stopping recommended: quality converged at ${(qualityOverall * 100).toFixed(0)}%, stage ${(stageProgress * 100).toFixed(0)}% complete. Consider concluding.`;
+    }
+    return undefined;
   }
 
   checkOverthinking(_thoughtNumber: number): string | undefined {
@@ -111,10 +184,113 @@ export class QualityMetricsService {
     return undefined;
   }
 
+  // Claim density scoring
+  measureClaimDensity(thought: string): { density: number; claimCount: number } {
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length === 0) return { density: 0, claimCount: 0 };
+    let claimCount = 0;
+    for (const pattern of CLAIM_PATTERNS) {
+      const matches = thought.match(pattern);
+      if (matches) claimCount += matches.length;
+    }
+    const density = round(claimCount / sentences.length);
+    return { density, claimCount };
+  }
+
+  // Metacognitive signal detection
+  measureMetacognition(thought: string): { ratio: number; warning?: string } {
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length === 0) return { ratio: 0 };
+    let metacogSentences = 0;
+    for (const s of sentences) {
+      if (METACOG_PATTERNS.some(p => p.test(s))) {
+        metacogSentences++;
+      }
+  
+      for (const p of METACOG_PATTERNS) p.lastIndex = 0;
+    }
+    const ratio = round(metacogSentences / sentences.length);
+    if (ratio > 0.3) {
+      return {
+        ratio,
+        warning: `High metacognition (${(ratio * 100).toFixed(0)}% filler). Focus on substance over "thinking about thinking".`,
+      };
+    }
+    return { ratio };
+  }
+
+  // Fallacy detection
+  detectFallacies(thought: string): string | undefined {
+    // Hasty generalization detection
+    if (HASTY_ABSOLUTES.test(thought) && HASTY_SINGULAR.test(thought)) {
+      return 'Possible hasty generalization: absolute claim near singular evidence. Consider qualifying the scope.';
+    }
+    return undefined;
+  }
+
+  // Dialectical score for VERIFY/SYNTHESIZE
+  measureDialectical(thought: string, stage: ThinkingStage): { score: number; warning?: string } {
+    if (stage !== 'VERIFY' && stage !== 'SYNTHESIZE') return { score: 1 };
+    const hasCounter = /\b(however|but|on the other hand|alternatively|counterpoint|downside|drawback)\b/i.test(thought);
+    const hasConcession = /\b(admittedly|granted|while|although|despite|nevertheless)\b/i.test(thought);
+    const hasSynthesis = /\b(therefore|overall|balancing|considering both|net effect|in summary)\b/i.test(thought);
+    const score = round(
+      0.33 * (hasCounter ? 1 : 0) +
+      0.33 * (hasConcession ? 1 : 0) +
+      0.34 * (hasSynthesis ? 1 : 0),
+    );
+    if (score < 0.33) {
+      return {
+        score,
+        warning: `Low dialectical reasoning in ${stage} — consider arguing against your conclusion before finalizing.`,
+      };
+    }
+    return { score };
+  }
+
+  // Reasoning type detection
+  detectReasoningType(thought: string): { dominant: string; feedback?: string } {
+    const lower = thought.toLowerCase();
+    const counts = {
+      deductive: 0,
+      inductive: 0,
+      abductive: 0,
+      analogical: 0,
+    };
+    if (WB('therefore').test(lower) || WB('thus').test(lower) || WB('it follows').test(lower) || WB('must be').test(lower)) counts.deductive++;
+    if (WB('pattern').test(lower) || WB('data shows').test(lower) || WB('evidence indicates').test(lower) || WB('trend').test(lower)) counts.inductive++;
+    if (/\b(best explanation|most likely|hypothesis|plausible)\b/i.test(lower)) counts.abductive++;
+    if (/\b(similar to|like|analogous|reminds of|compared to)\b/i.test(lower)) counts.analogical++;
+    const entries = Object.entries(counts) as [string, number][];
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    if (total === 0) return { dominant: 'mixed' };
+    const [dominant, dominantCount] = entries.reduce((max, e) => e[1] > max[1] ? e : max, entries[0]);
+    const ratio = dominantCount / total;
+    if (ratio > 0.8 && total >= 2) {
+      return {
+        dominant,
+        feedback: `Reasoning is ${(ratio * 100).toFixed(0)}% ${dominant} — consider incorporating ${dominant === 'deductive' ? 'inductive' : 'deductive'} reasoning for balance.`,
+      };
+    }
+    return { dominant };
+  }
+
+  // GoT topology analysis
+  analyzeTopology(edges: Array<{ from: number; to: number }>, thoughtCount: number): { orphanCount: number; linearRatio: number } {
+    if (thoughtCount <= 1 || edges.length === 0) return { orphanCount: 0, linearRatio: 1 };
+    const connected = new Set<number>();
+    for (const e of edges) { connected.add(e.from); connected.add(e.to); }
+    const orphanCount = Math.max(0, thoughtCount - connected.size);
+    const linearRatio = round(edges.length / Math.max(thoughtCount - 1, 1));
+    return { orphanCount, linearRatio };
+  }
+
   reset(): void {
     this.history = [];
     this.ewma = null;
+    this.ewmaCount = 0;
     this.consecutiveStagnant = 0;
+    this.confidenceHistory = [];
   }
 
   
@@ -122,56 +298,77 @@ export class QualityMetricsService {
     return [...this.history];
   }
 
+  // TTR-based clarity (Templin 1957)
   private evalClarity(thought: string): number {
     if (!thought.trim()) return 0;
-    const sentences = thought.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-    const avgLength = thought.length / Math.max(sentences.length, 1);
-
-    let score = 0.5;
-    if (avgLength < 100) score += 0.2;
-    if (avgLength < 50) score += 0.1;
-    if (sentences.length >= 2) score += 0.1;
-    if (thought.includes('```') || thought.includes('- ') || thought.includes('1.')) score += 0.1;
-
-    return clamp(score);
+    const words = thought.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    if (words.length === 0) return 0;
+    const uniqueWords = new Set(words);
+    // TTR = unique/total
+    const ttr = uniqueWords.size / words.length;
+    // Sentence diversity bonus
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const structureBonus = sentences.length >= 2 ? 0.1 : 0;
+    const formatBonus = (thought.includes('```') || thought.includes('- ') || thought.includes('1.')) ? 0.1 : 0;
+    return clamp(ttr + structureBonus + formatBonus);
   }
 
+  // Clause-based depth (Hunt 1965)
   private evalDepth(thought: string): number {
     if (!thought.trim()) return 0;
-    let score = 0.4;
+    let score = 0.3;
     const lower = thought.toLowerCase();
+    // Clause indicators: commas, semicolons, colons within sentences
+    const clauseIndicators = (thought.match(/[,;:]/g) || []).length;
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const avgClauses = sentences.length > 0 ? clauseIndicators / sentences.length : 0;
+    score += Math.min(0.3, avgClauses * 0.1);
 
-    if (thought.length > 200) score += 0.15;
-    if (thought.length > 500) score += 0.1;
-    const depthWords = ['because', 'therefore', 'since', 'implies', 'consequence', 'root cause', 'specifically'];
-    score += Math.min(0.3, depthWords.filter((w) => lower.includes(w)).length * 0.1);
-
+    const depthWords = ['because', 'therefore', 'since', 'implies', 'consequence', 'specifically'];
+    score += Math.min(0.3, depthWords.filter(w => WB(w).test(lower)).length * 0.1);
+    // Length bonus
+    if (thought.length > 200) score += 0.1;
     return clamp(score);
   }
 
+  // Breadth with unique noun ratio
   private evalBreadth(thought: string): number {
     if (!thought.trim()) return 0;
-    let score = 0.4;
+    let score = 0.3;
     const lower = thought.toLowerCase();
     const breadthWords = ['also', 'another', 'additionally', 'furthermore', 'alternative', 'option', 'versus', 'compared'];
-    score += Math.min(0.3, breadthWords.filter((w) => lower.includes(w)).length * 0.1);
+    score += Math.min(0.3, breadthWords.filter(w => WB(w).test(lower)).length * 0.1);
     const listItems = (thought.match(/^[-•*]\s/gm) || []).length;
     if (listItems >= 2) score += 0.15;
     if (listItems >= 4) score += 0.1;
-
+    // Unique noun-like words (capitalized, >3 chars) as topic proxy
+    const nouns = thought.match(/\b[A-Z][a-z]{3,}\b/g) || [];
+    const uniqueNouns = new Set(nouns);
+    if (uniqueNouns.size >= 3) score += 0.1;
+    if (uniqueNouns.size >= 6) score += 0.05;
     return clamp(score);
   }
 
+  // Structural logic scoring (ROSCOE-inspired)
   private evalLogic(thought: string): number {
     if (!thought.trim()) return 0;
-    let score = 0.5;
     const lower = thought.toLowerCase();
-
-    const logicWords = ['if', 'then', 'because', 'therefore', 'however', 'but', 'although', 'thus', 'hence'];
-    score += Math.min(0.3, logicWords.filter((w) => lower.includes(w)).length * 0.075);
-    if (lower.includes('on the other hand') || lower.includes('conversely')) score += 0.1;
-
-    return clamp(score);
+    // Connective diversity: how many DIFFERENT connective types are used
+    const usedConnectives = LOGIC_CONNECTIVES.filter(c => WB(c).test(lower));
+    const connectiveDiversity = usedConnectives.length / LOGIC_CONNECTIVES.length;
+    // Conditional chain depth: A because B, therefore C
+    let chainDepth = 0;
+    const causalPairs = [['because', 'therefore'], ['since', 'thus'], ['given that', 'hence'], ['if', 'then']];
+    for (const [premise, conclusion] of causalPairs) {
+      if (WB(premise).test(lower) && WB(conclusion).test(lower)) chainDepth++;
+    }
+    // Conclusion presence
+    const hasConclusion = CONCLUSION_MARKERS.test(thought) ? 1 : 0;
+    return clamp(
+      0.4 * connectiveDiversity +
+      0.3 * Math.min(chainDepth / 3, 1) +
+      0.3 * hasConclusion,
+    );
   }
 
   private evalRelevance(thought: string): number {
@@ -179,17 +376,49 @@ export class QualityMetricsService {
     return 0.6;
   }
 
+  // Actionability (GRACE-inspired)
   private evalActionability(thought: string): number {
     if (!thought.trim()) return 0;
-    let score = 0.4;
-    const lower = thought.toLowerCase();
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length === 0) return 0;
+    // Imperative ratio
+    const imperatives = (thought.match(IMPERATIVE_VERBS) || []).length;
+    IMPERATIVE_VERBS.lastIndex = 0;
+    const imperativeRatio = Math.min(imperatives / sentences.length, 1);
+    // Specificity: numbers with units, file paths, extensions
+    let specificityCount = 0;
+    for (const pattern of SPECIFICITY_PATTERNS) {
+      specificityCount += (thought.match(pattern) || []).length;
+    }
+    const specificity = Math.min(specificityCount / sentences.length, 1);
+    // Concreteness: absence of vague phrases
+    const vagueCount = (thought.match(VAGUE_PHRASES) || []).length;
+    VAGUE_PHRASES.lastIndex = 0;
+    const concreteness = clamp(1 - vagueCount / Math.max(sentences.length, 1));
+    return clamp(
+      0.4 * imperativeRatio +
+      0.3 * specificity +
+      0.3 * concreteness,
+    );
+  }
 
-    const actionWords = ['implement', 'create', 'build', 'use', 'apply', 'configure', 'install', 'run', 'execute', 'add'];
-    score += Math.min(0.3, actionWords.filter((w) => lower.includes(w)).length * 0.075);
-    if (thought.includes('```')) score += 0.15;
-    if (thought.includes('/') || thought.includes('.ts') || thought.includes('.py')) score += 0.1;
-
-    return clamp(score);
+  // Session statistics
+  generateSessionStats(): Record<string, unknown> {
+    return {
+      totalThoughts: this.history.length,
+      avgQuality: this.history.length > 0
+        ? round(this.history.reduce((a, b) => a + b, 0) / this.history.length)
+        : 0,
+      qualityTrend: this.getTrend(),
+      ewmaFinal: this.ewma !== null ? round(this.ewma) : null,
+      confidenceVariance: this.confidenceHistory.length > 0
+        ? round(Math.sqrt(
+            this.confidenceHistory.reduce((s, v, _, a) =>
+              s + (v - a.reduce((x, y) => x + y, 0) / a.length) ** 2, 0,
+            ) / this.confidenceHistory.length,
+          ))
+        : null,
+    };
   }
 }
 
