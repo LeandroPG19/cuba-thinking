@@ -13,7 +13,7 @@ import { CognitiveProcessor } from './services/cognitive-processor.js';
 import { formatResponse } from './formatter.js';
 
 const SERVER_NAME = 'cuba-thinking';
-const SERVER_VERSION = '1.0.1';
+const SERVER_VERSION = '1.2.0';
 const processor = new CognitiveProcessor();
 const cubaTool: Tool = {
   name: 'cuba_thinking',
@@ -133,10 +133,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const parsed = CubaThinkingInputSchema.parse(coerced);
     const result = await processor.process(parsed);
 
+    // V12: Budget-aware MCTS threshold (Kocsis & Szepesvári 2006 — UCB1)
+    const mctsThresholds: Record<string, number> = {
+      fast: 0.50, balanced: 0.40, thorough: 0.35, exhaustive: 0.30,
+    };
+    const mctsThreshold = mctsThresholds[parsed.budgetMode ?? 'balanced'] ?? 0.40;
+
     // MCTS Forced Backtracking: reject thought when EWMA critically low
     if (
       result.ewmaReward !== undefined &&
-      result.ewmaReward < 0.40 &&
+      result.ewmaReward < mctsThreshold &&
       result.thoughtNumber > 3 &&
       result.bestHistoricalQuality
     ) {
@@ -145,7 +151,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [{
           type: 'text' as const,
           text:
-            `⛔ MCTS BACKTRACK — EWMA Reward ${(result.ewmaReward * 100).toFixed(0)}% < 40% threshold\n` +
+            `⛔ MCTS BACKTRACK — EWMA Reward ${(result.ewmaReward * 100).toFixed(0)}% < ${(mctsThreshold * 100).toFixed(0)}% threshold\n` +
             `Thought #${result.thoughtNumber} REJECTED at protocol level.\n` +
             `Rollback to thought #${best.thoughtNumber} (quality: ${(best.quality * 100).toFixed(0)}%).\n` +
             `You MUST branch with: branchFromThought: ${best.thoughtNumber}\n` +

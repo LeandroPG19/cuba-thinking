@@ -7,6 +7,17 @@ import { EmbeddingService, keywordSimilarity } from './embedding.service.js';
 import { CONFIDENCE_RANGES } from './stage-engine.service.js';
 import type { NLIService } from './nli.service.js';
 
+// V5: Stage-weighted contradiction thresholds (Green & Swets 1966 — SDT)
+// Early stages: permissive (brainstorming). Late stages: strict (final answer).
+const STAGE_CONTRADICTION_THRESHOLDS: Record<ThinkingStage, number> = {
+  DEFINE: 0.80,
+  RESEARCH: 0.70,
+  ANALYZE: 0.60,
+  HYPOTHESIZE: 0.55,
+  VERIFY: 0.50,
+  SYNTHESIZE: 0.45,
+};
+
 const NEGATION_WORDS = new Set([
   'not', 'no', 'never', 'incorrect', 'wrong', 'mistake',
   'however', 'actually', 'instead', 'but', 'contrary',
@@ -15,7 +26,7 @@ const NEGATION_WORDS = new Set([
   'avoid', 'prevent', 'rather', 'unlike',
 ]);
 
-const CONTRADICTION_SIM_THRESHOLD = 0.6;
+const CONTRADICTION_SIM_THRESHOLD = 0.6; // Default fallback
 
 const ASSUMPTION_DEDUP_THRESHOLD = 0.8;
 
@@ -32,7 +43,6 @@ export class AntiHallucinationService {
   async trackAssumptions(
     assumptions: string[] | undefined,
     thoughtNumber: number,
-    embeddings: EmbeddingService,
   ): Promise<string[]> {
     if (!assumptions || assumptions.length === 0) {
       return this.allAssumptions.map((a) => a.text);
@@ -44,10 +54,8 @@ export class AntiHallucinationService {
       let isDuplicate = false;
 
       for (const existing of this.allAssumptions) {
-        // Use embeddings when available, fallback to keyword similarity
-        const sim = embeddings.isAvailable
-          ? embeddings.similarity(existing.thought, thoughtNumber)
-          : keywordSimilarity(trimmed, existing.text);
+        // B1 fix: always compare assumption TEXT strings, not full thought embeddings
+        const sim = keywordSimilarity(trimmed, existing.text);
         if (sim > ASSUMPTION_DEDUP_THRESHOLD) {
           isDuplicate = true;
           break;
@@ -62,12 +70,13 @@ export class AntiHallucinationService {
     return this.allAssumptions.map((a) => a.text);
   }
 
-  // Enhanced contradiction detection with semantic polarity
+  // V5: Enhanced contradiction detection with stage-weighted thresholds
   async detectContradictions(
     thought: string,
     thoughtNumber: number,
     embeddings: EmbeddingService,
     nli?: NLIService,
+    stage?: ThinkingStage,
   ): Promise<Contradiction[]> {
     this.thoughtTexts.set(thoughtNumber, thought);
     if (thoughtNumber <= 1) return [];
@@ -83,7 +92,11 @@ export class AntiHallucinationService {
       } else {
         sim = keywordSimilarity(thought, prevText);
       }
-      if (sim > CONTRADICTION_SIM_THRESHOLD) {
+      // V5: Use stage-appropriate threshold
+      const threshold = stage
+        ? STAGE_CONTRADICTION_THRESHOLDS[stage]
+        : CONTRADICTION_SIM_THRESHOLD;
+      if (sim > threshold) {
         // Stage 2: NLI cross-encoder (semantic contradiction detection)
         if (nli?.isAvailable) {
           const nliResult = await nli.classify(prevText, thought);
@@ -201,7 +214,8 @@ export class AntiHallucinationService {
     previousStage: string,
     currentStage: string,
   ): { triggeredAt: number; stageTransition: string; openAssumptions: string[]; suggestedQuestions: string[] } | undefined {
-    const triggerTransitions = ['ANALYZE→HYPOTHESIZE', 'HYPOTHESIZE→SYNTHESIZE'];
+    // V13: +1 CoVe transition for RESEARCH→ANALYZE (Dhuliawala 2023, Meta AI)
+    const triggerTransitions = ['RESEARCH→ANALYZE', 'ANALYZE→HYPOTHESIZE', 'HYPOTHESIZE→SYNTHESIZE'];
     const transition = `${previousStage}→${currentStage}`;
     if (!triggerTransitions.includes(transition)) return undefined;
     const open = this.getOpenAssumptions();

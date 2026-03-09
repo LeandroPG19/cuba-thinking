@@ -9,6 +9,9 @@ export const THINKING_STAGES = [
 ] as const;
 
 export type ThinkingStage = (typeof THINKING_STAGES)[number];
+
+export const BUDGET_MODES = ['fast', 'balanced', 'thorough', 'exhaustive'] as const;
+export type BudgetMode = (typeof BUDGET_MODES)[number];
 export const CubaThinkingInputSchema = z.object({
   thought: z.string().min(1).max(50_000)
     .describe('Your current thinking step'),
@@ -145,4 +148,27 @@ export interface CubaThinkingOutput {
   topologyOrphanCount?: number;
   topologyLinearRatio?: number;
   bestHistoricalQuality?: { thoughtNumber: number; quality: number };
+
+  // E1: ROSCOE Faithfulness (Golovneva et al., ICLR 2023)
+  faithfulnessScore?: number;
+  // E4: Information Gain (Shannon 1948)
+  informationGain?: number;
+  // E6: Source Grounding
+  groundingScore?: number;
+  groundingWarning?: string;
+
+  // V1: Step Transition Coherence (Golovneva ICLR 2023 — ROSCOE §3.2)
+  stepCoherenceScore?: number;
+  stepCoherenceWarning?: string;
+  // V2: Evidence Accumulation (Wald 1945)
+  evidenceWarning?: string;
+  // V3: Verbosity (Graesser 2004 — Coh-Metrix)
+  verbosityRatio?: number;
+  verbosityWarning?: string;
+  // V7: Semantic Novelty (Guilford 1967)
+  semanticNovelty?: number;
+  semanticNoveltyWarning?: string;
+  // V8: Reasoning Chain Depth (Bloom 2001)
+  reasoningChainScore?: number;
+  reasoningChainWarning?: string;
 }

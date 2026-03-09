@@ -95,9 +95,12 @@ export class EmbeddingService {
     return manualCosineSim(embA, embB);
   }
 
-  
+  // V11: Sliding-window relevance (Mitra 1998 — query drift mitigation)
   relevance(thoughtNumber: number): number {
-    return this.similarity(1, thoughtNumber);
+    if (thoughtNumber <= 3) return this.similarity(1, thoughtNumber);
+    const window = [thoughtNumber - 3, thoughtNumber - 2, thoughtNumber - 1];
+    const sliding = window.reduce((s, i) => s + this.similarity(i, thoughtNumber), 0) / 3;
+    return Math.max(sliding, this.similarity(1, thoughtNumber));
   }
 
   
@@ -143,12 +146,21 @@ export function keywordSimilarity(textA: string, textB: string): number {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+// V9: Stopword filtering (Kaur & Buttar 2023 — +16% MAP improvement)
+const STOPWORDS = new Set([
+  'the', 'is', 'a', 'an', 'in', 'on', 'of', 'and', 'to', 'for',
+  'it', 'that', 'this', 'with', 'as', 'be', 'was', 'are', 'or',
+  'by', 'at', 'from', 'they', 'we', 'my', 'your', 'its', 'not',
+  'but', 'if', 'so', 'do', 'has', 'had', 'have', 'been', 'would',
+  'could', 'should', 'will', 'can', 'may', 'about', 'up', 'out',
+]);
+
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, '')
     .split(/\s+/)
-    .filter((t) => t.length > 1);
+    .filter((t) => t.length > 1 && !STOPWORDS.has(t));
 }
 
 function frequencyMap(tokens: string[]): Map<string, number> {

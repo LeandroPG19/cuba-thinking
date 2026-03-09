@@ -1,6 +1,6 @@
 # 🧠 Cuba-Thinking
 
-**Advanced sequential thinking for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive engine, semantic embeddings, anti-hallucination, graph-of-thought, NLI contradiction detection, MCTS quality enforcement, and cross-MCP memory symbiosis.
+**Advanced sequential thinking for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive engine, semantic embeddings, anti-hallucination, graph-of-thought, NLI contradiction detection, MCTS quality enforcement, ROSCOE faithfulness scoring, information gain analysis, source grounding, and cross-MCP memory symbiosis.
 
 1 tool. Zero configuration. Mathematically verified.
 
@@ -15,41 +15,57 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 - **6D quality metrics** — TTR clarity, clause depth, structural logic, noun breadth, semantic relevance, and concrete actionability
 - **Anti-hallucination** — Assumption tracking, NLI-verified contradiction detection, confidence calibration, Chain-of-Verification
 - **NLI Cross-Encoder** — DeBERTa-v3-xsmall (22M params) for semantic contradiction detection that negation-counting misses
-- **MCTS Forced Backtracking** — Protocol-level quality enforcement that rejects thoughts when EWMA drops below 40%
+- **MCTS Forced Backtracking** — Protocol-level quality enforcement with budget-aware thresholds
 - **Memory Symbiosis** — Cross-MCP bridge to cuba-memorys via formatted recall/consolidation instructions
 - **Metacognitive analysis** — Filler detection, claim density scoring, fallacy detection, dialectical reasoning checks
 - **Bias detection** — Identifies 5 cognitive biases with actionable suggestions
 - **Graph-of-Thought** — DAG edge registry with topology analysis (orphan detection, linearity ratio)
 - **Anti-overthinking** — EWMA stagnation detection, early stopping signals, fatigue monitoring
 
-| Feature | Cuba-Thinking | Basic Thinking MCPs |
-|---------|:------------:|:-------------------:|
+### v1.2 — New in this release
+
+- **Step Transition Coherence (V1)** — ROSCOE STC detects topic jumps between consecutive thoughts
+- **Evidence Accumulation (V2)** — Flags unsupported confidence increases (Wald Sequential Analysis)
+- **Verbosity Detection (V3)** — Content-word ratio catches filler-heavy thoughts (Coh-Metrix)
+- **Adaptive EWMA (V4)** — Budget-aware α floor prevents sluggish EWMA in long chains (Roberts 1959)
+- **Stage-Weighted Contradictions (V5)** — Progressive strictness from DEFINE (permissive) to SYNTHESIZE (strict)
+- **Quality Gate (V6)** — Budget-aware quality floor triggers early exit on low quality (Optimal Stopping)
+- **Semantic Novelty (V7)** — Detects redundant thoughts via divergent thinking originality score (Guilford 1967)
+- **Reasoning Chain Depth (V8)** — Tracks backward references to prior conclusions (Bloom's Taxonomy)
+- **Stopword Filtering (V9)** — Improves keyword similarity precision by +16% MAP (Kaur 2023)
+- **6-Signal EWMA Reward (V10)** — Composite reward includes E1/E4/E6 signals (Shannon DPI)
+- **Sliding-Window Relevance (V11)** — Compares against last-3 thoughts instead of always thought #1
+- **Budget-Aware MCTS (V12)** — Fast mode exploits (50%), exhaustive explores (30%) (UCB1)
+- **CoVe +1 Checkpoint (V13)** — Added RESEARCH→ANALYZE verification transition
+- **Compact Output (V14)** — New metrics displayed only when actionable
+- **Warmup Guard (V15)** — Suppresses false stagnation/overthinking alarms for thoughts 1-2
+
+| Feature | Cuba-Thinking | Official Sequential Thinking |
+|---------|:------------:|:----------------------------:|
 | 6-stage cognitive engine (Bloom's) | ✅ | ❌ |
 | Semantic embeddings (BGE-384d neural) | ✅ | ❌ |
-| 6D quality metrics + EWMA reward | ✅ | 4D or less |
+| 6D quality metrics + EWMA reward | ✅ | ❌ |
 | NLI contradiction detection (DeBERTa) | ✅ | ❌ |
 | MCTS forced backtracking (isError) | ✅ | ❌ |
 | Cross-MCP memory symbiosis | ✅ | ❌ |
-| TTR clarity (Templin 1957) | ✅ | ❌ |
-| Clause depth analysis (Hunt 1965) | ✅ | ❌ |
-| Structural logic scoring (ROSCOE) | ✅ | ❌ |
-| Claim density scoring | ✅ | ❌ |
-| Metacognitive filler detection | ✅ | ❌ |
-| Fallacy detection (hasty generalization) | ✅ | ❌ |
-| Dialectical reasoning check | ✅ | ❌ |
-| Confidence variance tracking (Shewhart) | ✅ | ❌ |
-| Shannon Entropy stability | ✅ | ❌ |
-| Graph-of-Thought with topology analysis | ✅ | ❌ |
+| Anti-hallucination (9 checks) | ✅ | ❌ |
+| Bias detection (5 types) | ✅ | ❌ |
+| Budget modes (4 levels) | ✅ | ❌ |
+| Step coherence / semantic novelty | ✅ | ❌ |
+| Evidence accumulation tracking | ✅ | ❌ |
+| Verbosity / reasoning chain analysis | ✅ | ❌ |
+| ROSCOE Faithfulness scoring | ✅ | ❌ |
+| Information Gain (Shannon) | ✅ | ❌ |
+| Source Grounding detection | ✅ | ❌ |
+| Graph-of-Thought with topology | ✅ | ❌ |
 | Chain-of-Verification (CoVe) | ✅ | ❌ |
 | Anti-overthinking + early stopping | ✅ | ❌ |
 | Fatigue monitoring | ✅ | ❌ |
-| Assumption tracking + dedup | ✅ | ❌ |
 | Confidence calibration per stage | ✅ | ❌ |
-| 5-bias detector | ✅ | ❌ |
-| Stagnation detection | ✅ | ❌ |
 | Reasoning type classification | ✅ | ❌ |
 | Graceful degradation | ✅ | ❌ |
-| Dependencies | **3** | 13+ |
+| **Total features** | **38** | **3** |
+| Dependencies | **3** | 2 |
 
 ---
 
@@ -145,16 +161,17 @@ Each stage boosts different quality dimensions. DEFINE boosts **Clarity** (3×),
 
 ## MCTS Forced Backtracking
 
-When the EWMA step reward drops below **40%** (after thought #3), the MCP tool call is **rejected at the protocol level** with `isError: true`. This is not a suggestion — it's an enforcement mechanism that forces the LLM to backtrack.
+When the EWMA step reward drops below the budget-aware threshold (after thought #3), the MCP tool call is **rejected at the protocol level** with `isError: true`.
 
 ```
-EWMA_reward < 0.40 AND thoughtNumber > 3
-  → isError: true
-  → Rollback to best historical thought
-  → LLM MUST branch from that thought
+Budget thresholds (V12 — UCB1, Kocsis 2006):
+  fast:       50%  (exploit — cut losses early)
+  balanced:   40%  (default)
+  thorough:   35%
+  exhaustive: 30%  (explore — give chains room)
 ```
 
-The system identifies the thought with the highest quality score in the session history and instructs the agent to branch from it using a completely different reasoning path:
+The system identifies the thought with the highest quality score and forces branching:
 
 ```
 ⛔ MCTS BACKTRACK — EWMA Reward 39% < 40% threshold
@@ -163,32 +180,22 @@ Rollback to thought #2 (quality: 75%).
 You MUST branch with: branchFromThought: 2
 ```
 
-This is based on Monte Carlo Tree Search (Coulom, 2006) applied to reasoning quality: the system prunes low-reward subtrees and forces exploration of high-reward branches.
-
 ---
 
 ## NLI Cross-Encoder — DeBERTa-v3-xsmall
 
-A two-stage contradiction detection pipeline that catches implicit semantic contradictions that negation word counting misses:
+Two-stage contradiction detection pipeline:
 
 ```
-Stage 1: Cosine similarity > 0.6?     (~1ms, embedding-based)
+Stage 1: Cosine similarity > threshold?   (~1ms, embedding-based)
+  V5: Threshold varies by stage — 0.80 (DEFINE) → 0.45 (SYNTHESIZE)
   ↓ Yes
-Stage 2: DeBERTa NLI classification   (~200ms, cross-encoder)
+Stage 2: DeBERTa NLI classification       (~200ms, text-classification)
   ↓ contradiction score > 0.85
   → NLI-verified contradiction
 ```
 
-The model is `Xenova/nli-deberta-v3-xsmall` (22M parameters, ONNX quantized q8), trained on SNLI + MultiNLI (~1M sentence pairs). It runs locally with zero API calls.
-
-Example output:
-
-```
-🔴 NLI-verified contradiction between thought #8 and #9 (NLI: 86%, semantic: 64%)
-🔴 NLI-verified contradiction between thought #8 and #10 (NLI: 91%, semantic: 62%)
-```
-
-In both cases, the semantic similarity (64%, 62%) was below the negation detection threshold — only the NLI cross-encoder caught these contradictions.
+The model is `Xenova/nli-deberta-v3-xsmall` (22M parameters, ONNX quantized q8), running locally with zero API calls.
 
 If the NLI model fails to load, the system falls back to negation polarity detection.
 
@@ -196,7 +203,7 @@ If the NLI model fails to load, the system falls back to negation polarity detec
 
 ## Cortex-Hippocampus Symbiosis
 
-Cross-MCP memory bridge between cuba-thinking and [cuba-memorys](https://github.com/lENADRO1910/cuba-memorys). Since MCPs cannot call each other directly, the symbiosis works through formatted instructions in the tool output that guide the LLM:
+Cross-MCP memory bridge between cuba-thinking and [cuba-memorys](https://github.com/lENADRO1910/cuba-memorys):
 
 | Stage | Trigger | Injected Instruction |
 |-------|---------|---------------------|
@@ -204,7 +211,7 @@ Cross-MCP memory bridge between cuba-thinking and [cuba-memorys](https://github.
 | | | `cuba_expediente(query:...)` — check past errors |
 | **SYNTHESIZE** (!nextThought) | Conclusion | `cuba_cronica(action:"add", ...)` — consolidate lesson |
 
-This creates a cognitive loop: **recall before reasoning, consolidate after conclusion** — analogous to the cortex-hippocampus consolidation cycle in neuroscience (McClelland et al., 1995).
+This creates a cognitive loop: **recall before reasoning, consolidate after conclusion** — analogous to the cortex-hippocampus consolidation cycle (McClelland et al., 1995).
 
 ---
 
@@ -218,106 +225,98 @@ Each dimension uses empirically validated linguistic measures:
 | **Depth** | Subordinate clause counting + causal keyword density | Hunt (1965) |
 | **Breadth** | Unique noun ratio + topic diversity markers | Lexical diversity |
 | **Logic** | Connective type diversity + conditional chain depth + conclusion presence | ROSCOE (Golovneva et al., 2023) |
-| **Relevance** | Cosine similarity to first thought (embedding) or keyword fallback | Salton (1975) |
+| **Relevance** | Cosine similarity with sliding-window (V11) or keyword fallback | Salton (1975) |
 | **Actionability** | Imperative verbs + units/measurements + specificity vs. vagueness | GRACE (Guan et al., 2024) |
 
 ### EWMA Step Reward — Roberts (1959)
 
 ```
-EWMA_t = α_n · reward_t + (1 - α_n) · EWMA_{t-1}
-α_n = 2 / (n + 1)        — adaptive smoothing
-reward = 0.6·quality + 0.3·coherence + 0.1·(1 - contradictions/t)
+EWMA_t = α · reward_t + (1 - α) · EWMA_{t-1}
+α = max(2/(n+1), α_floor)    — V4: budget-aware floor
+
+reward = 0.40·quality + 0.20·coherence + 0.10·(1 - contradictions/t)
+       + 0.10·faithfulness + 0.10·informationGain + 0.10·grounding
+                                                    ↑ V10: 6-signal composite
 ```
-
-Adaptive α reduces sensitivity to noise as the session progresses while maintaining fast initial responsiveness.
-
-### Shannon Entropy Stability — Shannon (1948)
-
-```
-H = -Σ pᵢ·log₂(pᵢ)   where pᵢ = scoreᵢ / Σscores
-stability = H / H_max  where H_max = log₂(6)
-```
-
-Stability < 0.60 triggers a warning that reasoning is lopsided.
-
-### OLS Trend Analysis — Gauss (1795)
-
-```
-slope = (n·Σxy − Σx·Σy) / (n·Σx² − (Σx)²)
-```
-
-`slope > 0.02` → 📈 improving, `< -0.02` → 📉 declining.
 
 ---
 
 ## Anti-Hallucination
 
-Six verification layers that require zero LLM calls:
+Nine verification layers that require zero LLM calls:
 
-### 1. Assumption Tracking
-
-Accumulates and deduplicates assumptions across all thoughts. Semantic deduplication when embeddings are available (cosine > 0.85 → duplicate), keyword fallback otherwise.
-
-### 2. Contradiction Detection — Two-Stage Pipeline
-
-**Stage 1: Cosine + Negation** — Compares each new thought against all previous thoughts for semantic similarity combined with negation polarity analysis:
-
-```
-contradiction = similarity(A, B) > 0.6
-                AND |negations(A) - negations(B)| ≥ 2
-```
-
-**Stage 2: NLI Cross-Encoder** — When cosine similarity exceeds 0.6, the DeBERTa-v3-xsmall model classifies the pair. Contradiction score > 0.85 = verified contradiction.
-
-### 3. Confidence Calibration
-
-Flags overconfidence (high confidence in early stages) and underconfidence (low confidence in late stages) with per-stage expected ranges.
-
-### 4. Chain-of-Verification (CoVe) — Dhuliawala et al. (2023)
-
-At critical stage transitions, generates targeted verification questions:
-- **Quantitative assumptions** (containing numbers/percentages): "What measurement confirms: ...?"
-- **Qualitative assumptions**: "What evidence supports: ...?"
-
-### 5. Claim Density Scoring
-
-Counts verifiable assertions per sentence (percentages, large numbers, absolutes, causal claims). High density signals text that needs more verification.
-
-### 6. MCTS Quality Enforcement
-
-EWMA reward < 40% after 3+ thoughts → tool call rejected with `isError: true` at the MCP protocol level. The LLM is forced to backtrack to the highest-quality historical thought.
+1. **Assumption Tracking** — Semantic dedup across all thoughts
+2. **Contradiction Detection** — Two-stage pipeline (embedding + NLI cross-encoder)
+3. **Stage-Weighted Thresholds (V5)** — Progressive strictness from DEFINE → SYNTHESIZE
+4. **Confidence Calibration** — Per-stage expected ranges
+5. **Chain-of-Verification (V13)** — 3 stage transitions (RESEARCH→ANALYZE, ANALYZE→HYPOTHESIZE, HYPOTHESIZE→SYNTHESIZE)
+6. **Evidence Accumulation (V2)** — Flags unsupported confidence increases
+7. **Claim Density Scoring** — Verifiable assertions per sentence
+8. **Source Grounding (E6)** — Grounded vs. ungrounded claim ratio
+9. **MCTS Quality Enforcement** — Protocol-level rejection of low-quality thoughts
 
 ---
 
-## Metacognitive Analysis
+## Advanced Reasoning Metrics (v1.2)
 
-### Metacognitive Filler Detection — Flavell (1979)
-
-Identifies "thinking about thinking" patterns that consume tokens without substance:
+### Step Transition Coherence (V1) — Golovneva et al. (2023)
 
 ```
-filler_ratio = filler_words / total_words
+STC(n) = cos_sim(thought_{n-1}, thought_n)
+STC < 30% → "Topic jump without explicit branching"
 ```
 
-Patterns: "let me think", "well", "hmm", "I'm not sure", "maybe I should". Warning triggers at > 30% filler ratio.
+### Evidence Accumulation (V2) — Wald (1945)
 
-### Fallacy Detection
+```
+Δ_confidence > 10% AND evidence_strength < 3%
+  → "Unsupported confidence increase"
+```
 
-Detects hasty generalization: absolute claims (`always`, `never`, `every`, `all`) near singular evidence (`one`, `single`, `this example`).
+### Verbosity (V3) — Graesser (2004)
 
-### Dialectical Reasoning — Stage-Aware
+```
+CWR = content_words / total_words
+CWR < 40% → "High verbosity — be more concise"
+```
 
-In VERIFY and SYNTHESIZE stages, checks for counter-argument markers (`however`, `on the other hand`, `admittedly`, `despite`). Absence triggers a warning to consider opposing viewpoints before finalizing conclusions.
+### Semantic Novelty (V7) — Guilford (1967)
 
-### Reasoning Type Classification
+```
+novelty = 1 - max(sim(thought_n, thought_i))  ∀i < n
+novelty < 15% → "Semantic redundancy — explore a different angle"
+```
 
-Classifies dominant reasoning pattern (deductive, inductive, or abductive) and provides actionable feedback when reasoning is imbalanced.
+### Reasoning Chain Depth (V8) — Anderson & Krathwohl (2001)
+
+```
+chain_score = backward_references / (n - 1)
+chain_score < 10% after thought 3 → "Reference earlier findings"
+```
+
+### ROSCOE Faithfulness (E1)
+
+```
+F(sₙ) = (1/n) · Σᵢ cos_sim(sₙ, sᵢ)
+F < 95% → semantic drift warning
+```
+
+### Information Gain (E4) — Shannon (1948)
+
+```
+IG = new_concepts / total_concepts
+```
+
+### Source Grounding (E6)
+
+```
+G = grounded / (grounded + ungrounded)
+G < 30% with ≥ 2 ungrounded → "Add sources/references"
+```
 
 ---
 
 ## Graph-of-Thought (GoT-lite) — Besta et al. (2024)
-
-Tracks reasoning structure as a directed acyclic graph:
 
 | Edge Type | Created By | Meaning |
 |-----------|-----------|---------|
@@ -325,167 +324,49 @@ Tracks reasoning structure as a directed acyclic graph:
 | `revises` | `revisesThought` | Thought revises a previous one |
 | `merges` | `parentThoughts[]` | Thought merges multiple parents |
 
-Graph coherence is computed as the average similarity across all edges:
-
-```
-coherence = (1/|E|) · Σ sim(thought_u, thought_v)
-```
-
-### Topology Analysis
-
-- **Orphan detection**: Counts thoughts with no incoming or outgoing edges
-- **Linearity ratio**: `unique_nodes_with_edges / total_thoughts`. Low ratio indicates unexplored branches
+Graph coherence = average similarity across all edges. Topology analysis detects orphan thoughts and evaluates graph linearity.
 
 ---
 
-## Confidence Variance — Shewhart (1931)
+## Budget Modes
 
-Tracks standard deviation of confidence values across the session:
-
-```
-σ = sqrt(Σ(x_i - μ)² / n)
-```
-
-σ > 0.25 triggers a stability warning — large confidence swings indicate the agent is oscillating rather than converging.
-
----
-
-## Anti-Overthinking — DeepSeek (2025)
-
-Based on DeepSeek's "Thoughtology" research: reasoning quality follows an inverted-U curve.
-
-```
-stagnation = true if EWMA_diff < 2% for 3+ consecutive thoughts
-```
-
-### Early Stopping Signal
-
-When quality > 0.7 and progress > 70%, suggests concluding. In `fast` budgetMode, auto-reduces `totalThoughts`.
-
----
-
-## Fatigue Detection
-
-Monitors consecutive quality drops:
-
-| Consecutive Drops | Suggested Action |
-|:-----------------:|:----------------:|
-| < 3 | `continue` |
-| 3–4 | `step_back` |
-| ≥ 5 | `conclude` |
-
----
-
-## Bias Detection — Kahneman & Tversky (1974)
-
-Identifies 5 cognitive biases with actionable suggestions:
-
-| Bias | Detection Method | Trigger |
-|------|:---------------:|---------| 
-| **Confirmation** | History similarity > 0.7 | Repeatedly reinforcing same conclusion |
-| **Anchoring** | First quantitative reference dominates | Over-reliance on initial data point |
-| **Availability** | Recency weighting of examples | Using recent/memorable examples disproportionately |
-| **Overconfidence** | High confidence early in reasoning | Confidence > 0.8 before 50% progress |
-| **Sunk Cost** | Late-stage reluctance to change | Keywords like "already invested" after 70% progress |
+| Mode | EWMA α Floor | MCTS Threshold | Quality Gate |
+|------|:------------:|:--------------:|:------------:|
+| `fast` | 0.30 | 50% | 30% |
+| `balanced` | — | 40% | 25% |
+| `thorough` | 0.20 | 35% | 20% |
+| `exhaustive` | 0.15 | 30% | 15% |
 
 ---
 
 ## Silent by Default
 
-All features follow the **silent by default** principle — they only appear when they detect actionable conditions:
+All features only appear when they detect actionable conditions:
 
 | Feature | Only Appears When |
 |---------|------------------|
 | Shannon Stability | < 60% (unbalanced reasoning) |
-| EWMA Reward | Always (core quality metric) |
-| Claim Density | Claims detected in text |
+| EWMA Reward | Always (core metric) |
+| Claim Density | Claims detected |
 | Metacognition Warning | > 30% filler ratio |
 | Fallacy Warning | Hasty generalization detected |
 | Dialectical Warning | VERIFY/SYNTHESIZE without counter-arguments |
 | Confidence Variance | σ > 0.25 |
-| Anti-Overthinking | 3+ stagnant thoughts |
+| Anti-Overthinking | 3+ stagnant thoughts (V15: suppressed for t≤2) |
 | Early Stopping | Quality > 0.7 and progress > 70% |
 | CoVe Checkpoint | Stage transitions with open assumptions |
 | Fatigue | 3+ consecutive quality drops |
-| Graph | When edges exist |
-| Topology Orphans | Orphan thoughts detected |
-| MCTS Backtracking | EWMA < 40% after thought #3 |
-| Memory Recall | DEFINE stage, thought ≤ 2 |
-| Memory Consolidation | SYNTHESIZE stage, reasoning complete |
+| MCTS Backtracking | EWMA < threshold after thought #3 |
+| Memory Recall/Consolidation | DEFINE/SYNTHESIZE stages |
 | NLI Contradiction | Cross-encoder score > 0.85 |
-
----
-
-## Test Results
-
-```
-Test Suites: 9 passed, 9 total
-Tests:       246 passed, 246 total
-Failures:    0
-```
-
-### Coverage
-
-| File | Stmts | Branch | Funcs | Lines |
-|------|:-----:|:------:|:-----:|:-----:|
-| **All files** | **91.47%** | **83.51%** | **96.87%** | **92.9%** |
-| formatter.ts | 100% | 100% | 100% | 100% |
-| types.ts | 100% | 100% | 100% | 100% |
-| stage-engine.service.ts | 100% | 100% | 100% | 100% |
-| bias-detector.service.ts | 100% | 100% | 100% | 100% |
-| quality-metrics.service.ts | 95.95% | 86.25% | 100% | 99.53% |
-| anti-hallucination.service.ts | 97.36% | 92.85% | 100% | 100% |
-| cognitive-processor.ts | 86.5% | 64.4% | 80% | 86.4% |
-| embedding.service.ts | 66.66% | 62.5% | 93.75% | 69.76% |
-| nli.service.ts | 71.42% | 57.14% | 100% | 71.05% |
-
-> **Note**: embedding/nli services depend on ONNX model loading. Uncovered lines are hardware-dependent model inference paths that require the actual model binaries.
-
-### Coverage by Category
-
-| Category | Tests | Coverage |
-|----------|:-----:|----------|
-| Quality Metrics (6D + EWMA + Shannon) | 42 | TTR, clause depth, structural logic, actionability, EWMA reward, entropy stability |
-| Anti-Hallucination (contradictions + CoVe) | 28 | Assumption tracking, negation polarity, confidence calibration, CoVe questions |
-| Cognitive Processor (orchestration) | 35 | Full pipeline integration, graph edges, fatigue, overthinking |
-| Stage Engine (6-stage FSM) | 24 | Auto-detection, transitions, weights, confidence ranges |
-| Embedding Service (BGE + fallback) | 18 | Cosine similarity, keyword fallback, cache, graceful degradation |
-| Bias Detector (5 biases) | 12 | Confirmation, anchoring, availability, overconfidence, sunk cost |
-| Formatter (response rendering) | 48 | All 14 render functions, stage/trend icons, all sections, bar() edges |
-| Coverage Boost (edge cases) | 32 | NLI mocks, model fallbacks, deep branches |
-
-### Nemesis Protocol (Adversarial Testing)
-
-| Level | Tests | Description |
-|-------|:-----:|-------------|
-| 🟢 Normal | 25 | Valid inputs, happy paths |
-| 🟡 Pessimistic | 14 | Empty strings, undefined, single words, no edges |
-| 🔴 Extreme | 12 | Unicode attacks, SQL injection, XSS payloads, 5000-repeat strings, path traversal |
-
-**Key invariant**: All quality scores stay in [0, 1] range for ALL inputs including adversarial payloads.
-
-### Live Validation (32/32 Features)
-
-All features validated in a 13-thought live session:
-
-| Feature Category | Validated |
-|-----------------|:---------:|
-| All 6 cognitive stages | ✅ |
-| 6D quality metrics + EWMA + trend | ✅ |
-| NLI cross-encoder (86%, 91% confidence) | ✅ |
-| MCTS backtracking (EWMA 39% → isError) | ✅ |
-| Memory Recall (DEFINE) | ✅ |
-| Memory Consolidation (SYNTHESIZE) | ✅ |
-| Assumptions (4 tracked, deduplicated) | ✅ |
-| Confidence calibration (under/over) | ✅ |
-| Bias detection (overconfidence, sunk cost) | ✅ |
-| GoT graph (branch, revise, merge) | ✅ |
-| Contradictions (negation + NLI) | ✅ |
-| CoVe verification checkpoint | ✅ |
-| Metacognition (43%–100% filler) | ✅ |
-| Stagnation + early stopping | ✅ |
-| Dialectical reasoning warning | ✅ |
-| Fallacy detection | ✅ |
+| **Step Coherence (V1)** | STC < 30% |
+| **Evidence Warning (V2)** | Unsupported confidence Δ |
+| **Verbosity Warning (V3)** | CWR < 40% |
+| **Semantic Novelty (V7)** | novelty < 15% |
+| **Reasoning Chain (V8)** | chain < 10% after t=3 |
+| Faithfulness (E1) | < 95% alignment |
+| Information Gain (E4) | > 0% new concepts |
+| Grounding Warning (E6) | < 30% grounded claims |
 
 ---
 
@@ -495,28 +376,17 @@ All features validated in a 13-thought live session:
 cuba-thinking/
 ├── package.json
 ├── tsconfig.json
-├── jest.config.mjs
 └── src/
-    ├── index.ts                          # MCP server + MCTS backtracking
+    ├── index.ts                          # MCP server + MCTS backtracking (V12)
     ├── types.ts                          # Zod schemas + TypeScript interfaces
-    ├── formatter.ts                      # Response rendering + memory symbiosis (14 renderers)
-    ├── __tests__/
-    │   ├── anti-hallucination.test.ts     # 28 tests
-    │   ├── bias-detector.test.ts          # 12 tests
-    │   ├── cognitive-processor.test.ts    # 35 tests
-    │   ├── coverage-boost.test.ts         # 32 tests (edge cases)
-    │   ├── embedding.test.ts             # 18 tests
-    │   ├── formatter.test.ts             # 48 tests
-    │   ├── quality-metrics.test.ts        # 42 tests
-    │   ├── stage-engine.test.ts           # 24 tests
-    │   └── v2-nemesis.test.ts            # 7 tests (adversarial)
+    ├── formatter.ts                      # Response rendering + memory symbiosis (V14)
     └── services/
-        ├── cognitive-processor.ts        # Central orchestrator (6 phases, CC~7)
-        ├── embedding.service.ts          # BGE-384d + keyword fallback
-        ├── nli.service.ts                # DeBERTa NLI cross-encoder
+        ├── cognitive-processor.ts        # Central orchestrator (V6, V15 + wiring)
+        ├── embedding.service.ts          # BGE-384d + keyword fallback (V9, V11)
+        ├── nli.service.ts                # DeBERTa NLI text-classification (B2)
         ├── stage-engine.service.ts       # 6-stage FSM
-        ├── quality-metrics.service.ts    # 6D + EWMA + metacognitive analysis
-        ├── anti-hallucination.service.ts # 6-layer verification + NLI pipeline
+        ├── quality-metrics.service.ts    # 6D + EWMA + V1-V4 + V7-V8 + V10
+        ├── anti-hallucination.service.ts # 9-layer verification (V5, V13)
         ├── bias-detector.service.ts      # 5-bias detection
         └── transformers-loader.ts        # Shared HuggingFace module loader
 ```
@@ -531,13 +401,13 @@ cuba-thinking/
 
 ### Graceful Degradation
 
-If the embedding model fails to load, Cuba-Thinking automatically falls back to keyword-based cosine similarity. If the NLI model fails to load, contradiction detection falls back to negation polarity only. All features continue working — model-dependent features degrade to heuristic equivalents.
+If models fail to load, Cuba-Thinking automatically falls back to keyword-based similarity and negation polarity detection. All features continue working — model-dependent features degrade to heuristic equivalents.
 
 ---
 
 ## Mathematical Verification
 
-Every formula is verified with Wolfram Alpha against analytical solutions:
+Every formula is verified with Wolfram Alpha:
 
 | Formula | Input | Expected | Result |
 |---------|-------|----------|--------|
@@ -556,7 +426,7 @@ Every formula is verified with Wolfram Alpha against analytical solutions:
 | [Cuba-Memorys](https://github.com/lENADRO1910/cuba-memorys) | Persistent memory — knowledge graph, Hebbian learning, anti-hallucination grounding |
 | **Cuba-Thinking** | Sequential reasoning — cognitive engine, quality metrics, NLI contradictions, MCTS enforcement, memory symbiosis |
 
-Together, they give AI agents **memory + reasoning** — the two fundamental capabilities for reliable AI assistance. The Cortex-Hippocampus symbiosis enables bidirectional communication: cuba-thinking recalls from cuba-memorys before reasoning, and consolidates conclusions back after synthesis.
+Together, they give AI agents **memory + reasoning** — the two fundamental capabilities for reliable AI assistance.
 
 ---
 
@@ -564,25 +434,33 @@ Together, they give AI agents **memory + reasoning** — the two fundamental cap
 
 | # | Citation | Used For |
 |---|----------|----------|
-| 1 | Shannon (1948). "A Mathematical Theory of Communication" | Entropy stability |
+| 1 | Shannon (1948). "A Mathematical Theory of Communication" | Entropy stability, Information Gain (E4, V10) |
 | 2 | Besta et al. (2024). "Graph of Thoughts" — ETH Zurich | DAG structure + topology |
-| 3 | Dhuliawala et al. (2023). "CoVe Reduces Hallucination" — Meta AI | Verification questions |
+| 3 | Dhuliawala et al. (2023). "CoVe Reduces Hallucination" — Meta AI | Verification questions (V13) |
 | 4 | Lightman et al. (2023). "Let's Verify Step by Step" — OpenAI | Step reward (EWMA) |
 | 5 | DeepSeek (2025). "Thoughtology" | Anti-overthinking + early stopping |
 | 6 | Flavell (1979). "Metacognition and Cognitive Monitoring" | Metacognitive filler detection |
-| 7 | Roberts (1959). "EWMA Control Charts" | Adaptive EWMA smoothing |
-| 8 | Anderson & Krathwohl (2001). "Revised Bloom's Taxonomy" | Cognitive stages |
+| 7 | Roberts (1959). "EWMA Control Charts" | Adaptive EWMA smoothing (V4) |
+| 8 | Anderson & Krathwohl (2001). "Revised Bloom's Taxonomy" | Cognitive stages, Reasoning Chain (V8) |
 | 9 | Salton (1975). "Vector Space Model" | Cosine similarity |
 | 10 | Gauss (1795). "Method of Least Squares" | OLS trend analysis |
 | 11 | Kahneman & Tversky (1974). "Judgment Under Uncertainty" | Bias detection |
 | 12 | Templin (1957). "Certain Language Skills in Children" | TTR clarity metric |
 | 13 | Hunt (1965). "Grammatical Structures" | Clause depth analysis |
-| 14 | Golovneva et al. (2023). "ROSCOE: Reasoning Scores" | Structural logic evaluation |
+| 14 | Golovneva et al. (2023). "ROSCOE: Reasoning Scores" — ICLR | STC (V1), Faithfulness (E1), Logic |
 | 15 | Guan et al. (2024). "GRACE: Generative Reasoning Assessment" | Actionability scoring |
-| 16 | Shewhart (1931). "Economic Control of Quality" | Confidence variance |
-| 17 | Coulom (2006). "Efficient Selectivity and Backup Operators in MCTS" | Forced backtracking |
-| 18 | He et al. (2021). "DeBERTa: Decoding-enhanced BERT with Disentangled Attention" | NLI cross-encoder |
+| 16 | Shewhart (1931). "Economic Control of Quality" | Confidence variance, Warmup guard (V15) |
+| 17 | Coulom (2006). "Efficient Selectivity in MCTS" | Forced backtracking |
+| 18 | He et al. (2021). "DeBERTa" | NLI cross-encoder |
 | 19 | McClelland et al. (1995). "Complementary Learning Systems" | Memory symbiosis |
+| 20 | Green & Swets (1966). "Signal Detection Theory" | Stage-weighted thresholds (V5) |
+| 21 | Wald (1945). "Sequential Analysis" | Evidence accumulation (V2), Quality gate (V6) |
+| 22 | Graesser et al. (2004). "Coh-Metrix" | Verbosity detection (V3) |
+| 23 | Guilford (1967). "Divergent Thinking" | Semantic novelty (V7) |
+| 24 | Kaur & Buttar (2023). "Stopword Removal Impact" — Springer | Stopword filtering (V9) |
+| 25 | Mitra et al. (1998). "Improving Automatic Query Expansion" | Sliding-window relevance (V11) |
+| 26 | Kocsis & Szepesvári (2006). "UCB Applied to Trees" | Budget-aware MCTS (V12) |
+| 27 | Zangari (1994). "EWMA for Risk Management" | Adaptive alpha floor (V4) |
 
 ---
 

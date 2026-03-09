@@ -78,7 +78,7 @@ export class CognitiveProcessor {
       input, thought, thoughtNumber, stageInfo,
     );
 
-    // Phase 4: EWMA + graph + fatigue + bias
+    // Phase 4: EWMA + graph + fatigue + bias + E1/E4/E6
     const graphResults = this.processGraph(
       input, thought, thoughtNumber, totalThoughts, qualityScores.overall,
       hallucinationResults.contradictions.length,
@@ -108,10 +108,10 @@ export class CognitiveProcessor {
     stageInfo: StageInfo,
   ) {
     const contradictions = await this.antiHallucination.detectContradictions(
-      thought, thoughtNumber, this.embeddings, this.nli,
+      thought, thoughtNumber, this.embeddings, this.nli, stageInfo.current, // V5: pass stage
     );
     const assumptions = await this.antiHallucination.trackAssumptions(
-      input.assumptions, thoughtNumber, this.embeddings,
+      input.assumptions, thoughtNumber,
     );
     const confidenceCalibration = this.antiHallucination.calibrateConfidence(
       input.confidence, stageInfo.current,
@@ -150,7 +150,7 @@ export class CognitiveProcessor {
       ? Math.min(1, contradictionCount / thoughtNumber) : 0;
     const ewmaReward = this.quality.updateEwma(
       qualityOverall, coherence, contradictionRatio,
-    );
+    ); // V4/V10: will update with E1/E4/E6 in Phase 5
     const overthinkingWarning = this.quality.checkOverthinking(thoughtNumber);
     this.registerEdges(input, thoughtNumber);
     const graphCoherence = this.computeGraphCoherence();
@@ -193,12 +193,34 @@ export class CognitiveProcessor {
     );
     const confidenceVariance = this.quality.trackConfidence(input.confidence);
     const topology = this.quality.analyzeTopology(this.edges, thoughtNumber);
+    // E1: ROSCOE Faithfulness
+    const faithfulness = this.quality.measureFaithfulness(this.embeddings, thoughtNumber);
+    // E4: Information Gain (Shannon)
+    const informationGain = this.quality.measureInformationGain(thought);
+    // E6: Source Grounding
+    const grounding = this.quality.measureGrounding(thought);
+
+    // V1: Step Transition Coherence (Golovneva ICLR 2023)
+    const stepCoherence = this.quality.measureStepCoherence(this.embeddings, thoughtNumber);
+    // V2: Evidence Accumulation (Wald 1945)
+    const evidenceAccum = this.quality.measureEvidenceAccumulation(
+      input.confidence, qualityOverall, grounding.score,
+    );
+    // V3: Verbosity (Graesser 2004)
+    const verbosity = this.quality.measureVerbosity(thought);
+    // V7: Semantic Novelty (Guilford 1967)
+    const semanticNovelty = this.quality.measureSemanticNovelty(this.embeddings, thoughtNumber);
+    // V8: Reasoning Chain Depth (Bloom 2001)
+    const reasoningChain = this.quality.measureReasoningChain(thought, thoughtNumber);
+
     const adjustedTotal = this.adjustBudget(
-      totalThoughts, thoughtNumber, input, overthinkingWarning, earlyStop,
+      totalThoughts, thoughtNumber, input, overthinkingWarning, earlyStop, qualityOverall,
     );
     return {
       claimDensity, metacog, fallacyWarning, dialectical,
       reasoning, earlyStop, confidenceVariance, topology, adjustedTotal,
+      faithfulness, informationGain, grounding,
+      stepCoherence, evidenceAccum, verbosity, semanticNovelty, reasoningChain,
     };
   }
 
@@ -211,6 +233,7 @@ export class CognitiveProcessor {
     input: CubaThinkingInput,
     overthinkingWarning: string | undefined,
     earlyStop: string | undefined,
+    qualityOverall?: number,
   ): number {
     let adjusted = totalThoughts;
     if (input.needsMoreThoughts) {
@@ -221,6 +244,16 @@ export class CognitiveProcessor {
     }
     if (earlyStop && input.budgetMode === 'fast') {
       adjusted = Math.min(adjusted, thoughtNumber + 1);
+    }
+    // V6: Budget-aware quality gate (Wald 1947 — Optimal Stopping)
+    if (qualityOverall !== undefined && thoughtNumber > 2) {
+      const qualityFloor = input.budgetMode === 'fast' ? 0.30
+        : input.budgetMode === 'balanced' ? 0.25
+        : input.budgetMode === 'thorough' ? 0.20
+        : 0.15; // exhaustive
+      if (qualityOverall < qualityFloor) {
+        adjusted = Math.min(adjusted, thoughtNumber + 1);
+      }
     }
     return adjusted;
   }
@@ -280,6 +313,35 @@ export class CognitiveProcessor {
       topologyOrphanCount: adv.topology.orphanCount > 0 ? adv.topology.orphanCount : undefined,
       topologyLinearRatio: adv.topology.linearRatio !== 1 ? adv.topology.linearRatio : undefined,
       bestHistoricalQuality: graph.bestHistoricalQuality,
+      // E1: ROSCOE Faithfulness
+      faithfulnessScore: adv.faithfulness !== undefined && adv.faithfulness < 0.95
+        ? adv.faithfulness : undefined,
+      // E4: Information Gain
+      informationGain: adv.informationGain > 0 ? adv.informationGain : undefined,
+      // E6: Source Grounding
+      groundingScore: adv.grounding.score < 1 && adv.grounding.warning
+        ? adv.grounding.score : undefined,
+      groundingWarning: adv.grounding.warning,
+
+      // V1: Step Transition Coherence
+      stepCoherenceScore: adv.stepCoherence?.score,
+      stepCoherenceWarning: adv.stepCoherence?.warning,
+      // V2: Evidence Accumulation
+      evidenceWarning: adv.evidenceAccum?.warning,
+      // V3: Verbosity
+      verbosityRatio: adv.verbosity.ratio < 0.4 ? adv.verbosity.ratio : undefined,
+      verbosityWarning: adv.verbosity.warning,
+      // V7: Semantic Novelty
+      semanticNovelty: adv.semanticNovelty?.score,
+      semanticNoveltyWarning: adv.semanticNovelty?.warning,
+      // V8: Reasoning Chain Depth
+      reasoningChainScore: adv.reasoningChain.score,
+      reasoningChainWarning: adv.reasoningChain.warning,
+      // V15: Warmup noise guard (Shewhart 1931 — min sample size)
+      ...(thoughtNumber <= 2 ? {
+        stagnationWarning: undefined,
+        overthinkingWarning: undefined,
+      } : {}),
     };
   }
 

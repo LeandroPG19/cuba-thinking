@@ -1,10 +1,10 @@
 import { loadTransformersModule } from './transformers-loader.js';
 
-type ZeroShotPipeline = (
+// B2 fix: text-classification pipeline — single forward pass (not ZSC's 3)
+type TextClassPipeline = (
   text: string,
-  labels: string[],
   options?: Record<string, unknown>,
-) => Promise<{ labels: string[]; scores: number[] }>;
+) => Promise<Array<{ label: string; score: number }>>;
 
 let _pipeline: ((task: string, model: string, opts?: Record<string, unknown>) => Promise<unknown>) | null = null;
 
@@ -30,7 +30,7 @@ export interface NLIResult {
  * Model: Xenova/nli-deberta-v3-xsmall (22M params, ONNX, trained SNLI+MultiNLI)
  */
 export class NLIService {
-  private classifier: ZeroShotPipeline | null = null;
+  private classifier: TextClassPipeline | null = null;
   private initPromise: Promise<boolean> | null = null;
   private _available = false;
   private _initAttempted = false;
@@ -59,11 +59,12 @@ export class NLIService {
     }
 
     try {
+      // B2 fix: text-classification — 1 forward pass instead of ZSC's 3
       this.classifier = await _pipeline(
-        'zero-shot-classification',
+        'text-classification',
         'Xenova/nli-deberta-v3-xsmall',
-        { dtype: 'q8' },
-      ) as unknown as ZeroShotPipeline;
+        { dtype: 'q8', top_k: 3 },
+      ) as unknown as TextClassPipeline;
 
       this._available = true;
       console.error('[cuba-thinking] NLI model loaded: DeBERTa-v3-xsmall (22M params)');
@@ -76,37 +77,42 @@ export class NLIService {
 
   /**
    * Classify the NLI relationship between two texts.
-   *
-   * Args:
-   *   premise: The reference text (earlier thought)
-   *   hypothesis: The text to test against (current thought)
-   *
-   * Returns:
-   *   NLIResult with dominant label and contradiction score
+   * B2 fix: Direct text-classification (1 forward pass, ~200ms)
+   * instead of zero-shot-classification (3 passes, ~600ms).
    */
   async classify(premise: string, hypothesis: string): Promise<NLIResult | null> {
     if (!this._available || !this.classifier) return null;
 
     try {
-      // NLI: premise is context, hypothesis is tested against labels
       const combined = `${premise} [SEP] ${hypothesis}`;
-      const result = await this.classifier(
-        combined,
-        ['This is a contradiction', 'This is consistent', 'This is unrelated'],
-        { hypothesis_template: 'Based on the context, {}' },
-      );
+      const results = await this.classifier(combined);
 
-      const contradictionIdx = result.labels.indexOf('This is a contradiction');
-      const contradictionScore = contradictionIdx >= 0 ? result.scores[contradictionIdx] : 0;
-
+      // Map SNLI/MultiNLI output labels to our standard
       const labelMap: Record<string, NLIResult['label']> = {
-        'This is a contradiction': 'contradiction',
-        'This is consistent': 'entailment',
-        'This is unrelated': 'neutral',
+        contradiction: 'contradiction',
+        entailment: 'entailment',
+        neutral: 'neutral',
+        CONTRADICTION: 'contradiction',
+        ENTAILMENT: 'entailment',
+        NEUTRAL: 'neutral',
       };
 
+      let contradictionScore = 0;
+      let dominantLabel: NLIResult['label'] = 'neutral';
+      let dominantScore = 0;
+
+      for (const r of results) {
+        const mapped = labelMap[r.label];
+        if (!mapped) continue;
+        if (mapped === 'contradiction') contradictionScore = r.score;
+        if (r.score > dominantScore) {
+          dominantScore = r.score;
+          dominantLabel = mapped;
+        }
+      }
+
       return {
-        label: labelMap[result.labels[0]] ?? 'neutral',
+        label: dominantLabel,
         contradictionScore: Math.round(contradictionScore * 100) / 100,
       };
     } catch {

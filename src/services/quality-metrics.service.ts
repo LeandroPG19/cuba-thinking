@@ -1,4 +1,4 @@
-import type { QualityScores, QualityTrend, ThinkingStage } from '../types.js';
+import type { QualityScores, QualityTrend, ThinkingStage, BudgetMode } from '../types.js';
 import { STAGE_QUALITY_WEIGHTS } from './stage-engine.service.js';
 
 const MIN_TREND_POINTS = 3;
@@ -54,6 +54,9 @@ export class QualityMetricsService {
   private ewmaCount = 0;
   private consecutiveStagnant = 0;
   private confidenceHistory: number[] = [];
+  private firstThoughtTokens: Set<string> | null = null;
+  private cumulativeVocab = new Set<string>();
+  private chainRefCount = 0; // V8
 
   
   calculate(
@@ -131,11 +134,27 @@ export class QualityMetricsService {
     return Hmax > 0 ? round(H / Hmax) : 0;
   }
 
-  // Adaptive EWMA: α_n = 2 / (n + 1)
-  updateEwma(quality: number, coherence: number, contradictionRatio: number): number {
+  // V4: Adaptive EWMA decay (Roberts 1959, Zangari 1994)
+  // Budget-aware α floor prevents EWMA becoming sluggish in long chains
+  updateEwma(
+    quality: number, coherence: number, contradictionRatio: number,
+    faithfulness?: number, informationGain?: number, grounding?: number,
+    budgetMode?: BudgetMode,
+  ): number {
     this.ewmaCount++;
-    const alpha = 2 / (this.ewmaCount + 1);
-    const reward = 0.6 * quality + 0.3 * coherence + 0.1 * (1 - contradictionRatio);
+    const baseAlpha = 2 / (this.ewmaCount + 1);
+    // V4: Alpha floor by budget mode
+    const alphaFloor = budgetMode === 'fast' ? 0.3
+      : budgetMode === 'exhaustive' ? 0.15
+      : budgetMode === 'thorough' ? 0.20
+      : 0; // balanced: no floor
+    const alpha = Math.max(baseAlpha, alphaFloor);
+    // V10: Include E1/E4/E6 in composite reward (Shannon DPI 1948)
+    const f = faithfulness ?? 1;
+    const ig = informationGain ?? 0.5;
+    const g = grounding ?? 1;
+    const reward = 0.40 * quality + 0.20 * coherence + 0.10 * (1 - contradictionRatio)
+      + 0.10 * f + 0.10 * ig + 0.10 * g;
     this.ewma = this.ewma === null
       ? reward
       : alpha * reward + (1 - alpha) * this.ewma;
@@ -286,12 +305,160 @@ export class QualityMetricsService {
     return { orphanCount, linearRatio };
   }
 
+  // E1: ROSCOE Faithfulness — how faithful is thought_n to prior thoughts (Golovneva et al., ICLR 2023)
+  measureFaithfulness(embeddings: { isAvailable: boolean; similarity: (a: number, b: number) => number }, thoughtNumber: number): number | undefined {
+    if (!embeddings.isAvailable || thoughtNumber <= 1) return undefined;
+    let maxSimSum = 0;
+    for (let i = 1; i < thoughtNumber; i++) {
+      maxSimSum += embeddings.similarity(i, thoughtNumber);
+    }
+    return round(maxSimSum / (thoughtNumber - 1));
+  }
+
+  // E4: Information Gain (Shannon 1948) — unique new concepts introduced
+  measureInformationGain(thought: string): number {
+    const nouns = (thought.match(/\b[A-Z][a-z]{3,}\b/g) || []);
+    const techTerms = (thought.match(/\b[a-z]{2,}(?:_[a-z]+)+\b/g) || []);
+    const concepts = new Set([...nouns, ...techTerms]);
+    let newConcepts = 0;
+    for (const c of concepts) {
+      if (!this.cumulativeVocab.has(c)) {
+        newConcepts++;
+        this.cumulativeVocab.add(c);
+      }
+    }
+    return concepts.size > 0 ? round(newConcepts / concepts.size) : 0;
+  }
+
+  // E6: Source Grounding — fraction of claims backed by evidence vs ungrounded
+  measureGrounding(thought: string): { score: number; warning?: string } {
+    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    if (sentences.length === 0) return { score: 1 };
+    const GROUNDED = /\b(according to|research shows|data from|per rfc|studies show|evidence suggests|source:|reference:|based on|documented in|as described in|paper by|measured at|benchmark shows)\b/i;
+    const UNGROUNDED = /\b(always|never|obviously|clearly|everyone knows|it's well known|of course)\b/i;
+    let grounded = 0;
+    let ungrounded = 0;
+    for (const s of sentences) {
+      if (GROUNDED.test(s)) grounded++;
+      if (UNGROUNDED.test(s) && !GROUNDED.test(s)) ungrounded++;
+    }
+    const total = grounded + ungrounded;
+    if (total === 0) return { score: 1 };
+    const score = round(grounded / total);
+    if (score < 0.3 && total >= 2) {
+      return { score, warning: `Low grounding (${(score * 100).toFixed(0)}%): ${ungrounded} ungrounded claims vs ${grounded} grounded. Add sources/references.` };
+    }
+    return { score };
+  }
+
+  // V1: Step Transition Coherence (Golovneva et al., ICLR 2023 — ROSCOE §3.2)
+  measureStepCoherence(
+    embeddings: { isAvailable: boolean; similarity: (a: number, b: number) => number },
+    thoughtNumber: number,
+  ): { score: number; warning?: string } | undefined {
+    if (!embeddings.isAvailable || thoughtNumber <= 2) return undefined;
+    const sim = embeddings.similarity(thoughtNumber - 1, thoughtNumber);
+    const score = round(sim);
+    if (score < 0.3) {
+      return {
+        score,
+        warning: `Low step coherence (${(score * 100).toFixed(0)}%): thought #${thoughtNumber} may have jumped topics without explicit branching.`,
+      };
+    }
+    return { score };
+  }
+
+  // V2: Evidence Accumulation Score (Wald 1945 — Sequential Analysis)
+  measureEvidenceAccumulation(
+    confidence: number | undefined,
+    qualityOverall: number,
+    groundingScore: number,
+  ): { warning?: string } | undefined {
+    if (confidence === undefined || this.confidenceHistory.length < 2) return undefined;
+    const prevConfidence = this.confidenceHistory[this.confidenceHistory.length - 2];
+    const actualDelta = confidence - prevConfidence;
+    const expectedDelta = 0.1 * qualityOverall * groundingScore;
+    if (actualDelta > 0.1 && expectedDelta < 0.03) {
+      return {
+        warning: `Unsupported confidence increase: +${(actualDelta * 100).toFixed(0)}% confidence but evidence strength only ${(expectedDelta * 100).toFixed(1)}%. Verify assumptions.`,
+      };
+    }
+    if (actualDelta < 0.02 && expectedDelta > 0.05) {
+      return {
+        warning: `Confidence plateau: evidence supports +${(expectedDelta * 100).toFixed(0)}% but confidence only changed +${(actualDelta * 100).toFixed(0)}%. Consider updating your assessment.`,
+      };
+    }
+    return undefined;
+  }
+
+  // V3: Verbosity Detection via Content-Word Ratio (Graesser 2004 — Coh-Metrix)
+  measureVerbosity(thought: string): { ratio: number; warning?: string } {
+    const words = thought.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    if (words.length === 0) return { ratio: 0 };
+    const CONTENT_STOPWORDS = new Set([
+      'the', 'is', 'a', 'an', 'in', 'on', 'of', 'and', 'to', 'for',
+      'it', 'that', 'this', 'with', 'as', 'be', 'was', 'are', 'or',
+      'by', 'at', 'from', 'they', 'we', 'my', 'your', 'its', 'not',
+      'but', 'if', 'so', 'do', 'has', 'had', 'have', 'been', 'would',
+      'could', 'should', 'will', 'can', 'may', 'about', 'up', 'out',
+      'let', 'me', 'think', 'well', 'okay', 'now', 'just', 'also',
+    ]);
+    const contentWords = words.filter(w => !CONTENT_STOPWORDS.has(w));
+    const ratio = round(contentWords.length / words.length);
+    if (ratio < 0.4) {
+      return {
+        ratio,
+        warning: `High verbosity: only ${(ratio * 100).toFixed(0)}% content words. Be more concise.`,
+      };
+    }
+    return { ratio };
+  }
+
+  // V7: Semantic Novelty (Guilford 1967 — Divergent Thinking Originality)
+  measureSemanticNovelty(
+    embeddings: { isAvailable: boolean; similarity: (a: number, b: number) => number },
+    thoughtNumber: number,
+  ): { score: number; warning?: string } | undefined {
+    if (!embeddings.isAvailable || thoughtNumber <= 1) return undefined;
+    let maxSim = 0;
+    for (let i = 1; i < thoughtNumber; i++) {
+      maxSim = Math.max(maxSim, embeddings.similarity(i, thoughtNumber));
+    }
+    const novelty = round(1 - maxSim);
+    if (novelty < 0.15 && thoughtNumber > 2) {
+      return {
+        score: novelty,
+        warning: `Semantic redundancy: thought #${thoughtNumber} is ${((1 - novelty) * 100).toFixed(0)}% similar to a prior thought. Explore a different angle.`,
+      };
+    }
+    return { score: novelty };
+  }
+
+  // V8: Cross-Thought Reasoning Depth (Bloom's Taxonomy, Anderson & Krathwohl 2001)
+  measureReasoningChain(thought: string, thoughtNumber: number): { score: number; warning?: string } {
+    if (thoughtNumber <= 1) return { score: 1 };
+    const BACKWARD_REFS = /\b(building on|given the above|from the previous|therefore since|as established|as shown earlier|this extends|following from|based on this|continuing from|as noted|per the earlier|given that we)\b/i;
+    const hasRef = BACKWARD_REFS.test(thought) ? 1 : 0;
+    this.chainRefCount = (this.chainRefCount ?? 0) + hasRef;
+    const score = round(this.chainRefCount / (thoughtNumber - 1));
+    if (score < 0.1 && thoughtNumber > 3) {
+      return {
+        score,
+        warning: 'Low cross-thought depth: thoughts are not building on prior conclusions. Reference earlier findings.',
+      };
+    }
+    return { score };
+  }
+
   reset(): void {
     this.history = [];
     this.ewma = null;
     this.ewmaCount = 0;
     this.consecutiveStagnant = 0;
     this.confidenceHistory = [];
+    this.firstThoughtTokens = null;
+    this.cumulativeVocab.clear();
+    this.chainRefCount = 0;
   }
 
   
@@ -372,9 +539,16 @@ export class QualityMetricsService {
     );
   }
 
+  // B3 fix: compute real fallback relevance via keyword overlap with first thought
   private evalRelevance(thought: string): number {
     if (!thought.trim()) return 0;
-    return 0.6;
+    const tokens = thought.toLowerCase().split(/\s+/).filter((w: string) => w.length > 1);
+    if (!this.firstThoughtTokens) {
+      this.firstThoughtTokens = new Set(tokens);
+      return 0.8; // First thought is highly relevant to itself
+    }
+    const overlap = tokens.filter((t: string) => this.firstThoughtTokens!.has(t)).length;
+    return clamp(overlap / Math.max(tokens.length, 1));
   }
 
   // Actionability (GRACE-inspired)

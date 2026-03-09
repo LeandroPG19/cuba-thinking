@@ -190,6 +190,38 @@ function formatAdvancedMetrics(output: CubaThinkingOutput, lines: string[]): voi
   if (output.confidenceVariance !== undefined) {
     lines.push(`📏 Confidence variance: σ=${output.confidenceVariance.toFixed(2)} — reasoning stability is low`);
   }
+  // E1: ROSCOE Faithfulness
+  if (output.faithfulnessScore !== undefined) {
+    lines.push(`🔗 Faithfulness: ${(output.faithfulnessScore * 100).toFixed(0)}% — semantic alignment with prior thoughts`);
+  }
+  // E4: Information Gain
+  if (output.informationGain !== undefined) {
+    lines.push(`📡 Information gain: ${(output.informationGain * 100).toFixed(0)}% new concepts introduced`);
+  }
+  // E6: Source Grounding
+  if (output.groundingWarning) {
+    lines.push(`📎 ${output.groundingWarning}`);
+  }
+  // V1: Step Transition Coherence
+  if (output.stepCoherenceWarning) {
+    lines.push(`🔗 ${output.stepCoherenceWarning}`);
+  }
+  // V2: Evidence Accumulation
+  if (output.evidenceWarning) {
+    lines.push(`⚖️ ${output.evidenceWarning}`);
+  }
+  // V3: Verbosity
+  if (output.verbosityWarning) {
+    lines.push(`📝 ${output.verbosityWarning}`);
+  }
+  // V7: Semantic Novelty
+  if (output.semanticNoveltyWarning) {
+    lines.push(`🔄 ${output.semanticNoveltyWarning}`);
+  }
+  // V8: Reasoning Chain Depth
+  if (output.reasoningChainWarning) {
+    lines.push(`🧱 ${output.reasoningChainWarning}`);
+  }
 }
 
 function formatMemoryHints(output: CubaThinkingOutput, lines: string[]): void {
