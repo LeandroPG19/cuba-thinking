@@ -1,0 +1,41 @@
+[package]
+name = "cuba_cognitive_engine"
+version = "0.1.0"
+edition = "2021"
+description = "SOTA Deep Reasoning MCTS Orchestrator for Local Hardware via MCP"
+authors = ["Antigravity <cuba-thinking>"]
+
+[dependencies]
+# Async Runtime
+tokio = { version = "1.36", features = ["full", "sync", "macros"] }
+
+# Protocol & Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+jsonrpc-core = "18.0"
+
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging & Observability (Structlog equivalent)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Memory Bounds and Arena Allocators (For O(1) MCTS cleanup)
+bumpalo = { version = "3.14", features = ["collections"] } # Fast arena allocation
+typed-arena = "2.0"
+
+# Mathematical verification (Micro-PRM and Physics)
+# We will invoke python sympy via external process if needed, or use a Rust equivalent if simple
+regex = "1.10"
+futures = "0.3.32"
+mimalloc = { version = "0.1.48", default-features = false }
+pyo3 = { version = "0.21.2", features = ["auto-initialize"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat" # Maximum optimization across all crates
+codegen-units = 1 # Maximize ILP and inlining
+panic = "abort" # Minimal binary size, fail fast on OOM

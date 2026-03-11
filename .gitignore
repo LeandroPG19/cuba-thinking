@@ -1,6 +1,15 @@
+# Node.js legacy
 node_modules/
 dist/
 src/__tests__/
 jest.config.mjs
 *.tsbuildinfo
 coverage/
+
+# Rust
+cuba_cognitive_engine/target/
+
+# IDE
+.cargo/
+*.swp
+*.swo
