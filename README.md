@@ -1,8 +1,8 @@
 # 🧠 Cuba-Thinking
 
-**Advanced cognitive reasoning engine for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive pipeline, 9-layer anti-hallucination, MCTS quality enforcement, Process Reward Model (PRM), bias detection, metacognitive analysis, persistent thought sessions, Graph-of-Thought topology, and cross-MCP memory symbiosis.
+**Advanced cognitive reasoning engine for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive pipeline, 9-layer anti-hallucination, MCTS quality enforcement, Process Reward Model (PRM), bias detection, metacognitive analysis, persistent thought sessions, Graph-of-Thought topology, mode collapse detection, and cross-MCP memory symbiosis.
 
-3 tools. Zero cloud dependencies. 165 tests. 6 audit rounds. Mathematically verified.
+3 tools. Zero cloud dependencies. 170 tests. 7 audit rounds. Mathematically verified.
 
 ---
 
@@ -19,6 +19,7 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 - **Graph-of-Thought (GoT)** — DAG topology tracking with Tarjan SCC cycle detection O(V+E) for circular reasoning (petitio principii)
 - **Persistent thought sessions** — Cross-call state accumulation: EWMA, novelty, graph, confidence oscillation, depth degradation, root-anchoring, hypothesis drift
 - **Epistemological rollback** — Snapshot/rollback of session state when MCTS rejects a thought, preventing hallucinated premises from poisoning future reasoning
+- **Mode collapse detection (V7)** — OrthogonalityGuard: Jaccard similarity against failed thoughts detects when LLM paraphrases rejected ideas instead of generating genuinely new hypotheses
 - **Bias detection** — Identifies 5 cognitive biases (Anchoring, Confirmation, Availability, Sunk Cost, Bandwagon)
 - **Metacognitive analysis** — Filler ratio, content-word ratio, claim density, fallacy detection, dialectical reasoning checks
 - **Corrective directives** — Actionable improvement suggestions targeting weak quality dimensions
@@ -28,7 +29,7 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 - **Novelty tracking** — Information gain per thought step via Jaccard distance on TF vectors
 - **Depth degradation** — Tracks quality.depth history per thought, detects >50% drop vs baseline (KV cache saturation proxy)
 - **Code-aware metrics** — Quality, depth, and directives adapt when input is code vs natural language
-- **Anti-overthinking** — Stagnation detection, fatigue monitoring, early stopping signals
+- **Anti-overthinking** — Stagnation detection, fatigue monitoring, mode collapse guard, early stopping signals
 
 ---
 
@@ -168,7 +169,7 @@ Zero LLM calls. All verification runs locally:
 | 8 | **Contradiction Flag** | Internal contradiction detection |
 | 9 | **Warmup Guard** | Suppress false alarms for thoughts 1–2 |
 
-**Anti-Overthinking (R10):** Detects stagnation (3+ similar EWMA) and fatigue (3+ consecutive drops). Triggers early stopping signals.
+**Anti-Overthinking (R10):** Detects stagnation (3+ similar EWMA), fatigue (3+ consecutive drops), and mode collapse (paraphrasing rejected thoughts). Triggers early stopping signals.
 
 **Trust Score:**
 
@@ -240,6 +241,7 @@ Sessions maintain state across multiple MCP tool calls sharing the same hypothes
 - **Confidence oscillation**: Detects rapidly alternating confidence (>3 sign changes in 5 readings)
 - **Depth degradation (V6)**: Tracks quality.depth history, detects >50% drop vs baseline (first 3 thoughts) — indicates KV cache saturation
 - **Epistemological rollback (V5)**: Snapshot/rollback when MCTS rejects a thought — physically removes dead branch state from thoughts, confidence_history, depth_history, and graph
+- **Mode collapse guard (V7)**: Stores rejected thought texts (max 5), detects paraphrasing via Jaccard similarity > 0.6. Rollback clears failures for fresh exploration
 - **Auto-expire**: TTL 600s to prevent memory leaks
 
 ---
@@ -353,7 +355,7 @@ cuba-thinking/
             ├── claim_grounding.rs           # ROSCOE faithfulness + specificity
             │
             ├── ── Deep Reasoning ──
-            ├── thought_session.rs           # Persistent sessions + rollback + depth trend (V5/V6)
+            ├── thought_session.rs           # Persistent sessions + rollback + depth trend + mode collapse (V5/V6/V7)
             ├── corrective_directives.rs     # Actionable improvement suggestions
             ├── stage_validator.rs           # Stage transition validation
             │
@@ -378,11 +380,11 @@ cuba-thinking/
 
 ### Test Suite
 
-- **165 tests** covering all engine modules (run with `--test-threads=1` for PyO3 safety)
+- **170 tests** covering all engine modules (run with `--test-threads=1` for PyO3 safety)
 - **0 clippy errors** on `cargo clippy`
 - Property-based boundary testing for all scoring functions
 - NEMESIS 3-level test structure: 🟢 Normal, 🟡 Pessimistic, 🔴 Extreme
-- 6 audit rounds of security and mathematical hardening
+- 7 audit rounds of security and mathematical hardening
 
 ---
 
@@ -405,6 +407,7 @@ Features only appear when actionable:
 | Depth Degradation | quality.depth drops >50% vs baseline (V6) |
 | Confidence Oscillation | >3 sign changes in 5 readings |
 | Hypothesis Drift | Semantic distance from original > threshold |
+| Mode Collapse | Jaccard similarity > 0.6 with rejected thought (V7) |
 | Memory Instructions | DEFINE/SYNTHESIZE stages |
 | Stage Mismatch | Declared vs detected stage disagree |
 
@@ -426,6 +429,7 @@ Every formula verified with unit tests and Wolfram Alpha:
 | Confidence calibration | Stage-aware ranges | ✅ |
 | Tarjan SCC O(V+E) | Cycle detection correctness | ✅ |
 | Depth degradation baseline | First-3-mean vs current | ✅ |
+| Jaccard similarity &#124;A∩B&#124;/&#124;A∪B&#124; | Mode collapse detection | ✅ |
 | Shannon entropy H(X) | Text information density | ✅ |
 | LZ76 complexity | Kolmogorov complexity proxy | ✅ |
 
@@ -470,6 +474,7 @@ Together, they give AI agents **memory + reasoning + search + execution**.
 | 20 | Lempel & Ziv (1976). "On the Complexity of Finite Sequences" | LZ76 complexity metric |
 | 21 | Press et al. (2022). "Train Short, Test Long" | Depth degradation / KV cache saturation |
 | 22 | PEP 578 (2019). "Python Runtime Audit Hooks" | Sandbox security layer |
+| 23 | Cilibrasi & Vitányi (2005). "Clustering by Compression" — IEEE TIT | NCD-inspired mode collapse detection |
 
 ---
 
