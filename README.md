@@ -23,7 +23,7 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 - **Bias detection** — Identifies 5 cognitive biases (Anchoring, Confirmation, Availability, Sunk Cost, Bandwagon)
 - **Metacognitive analysis** — Filler ratio, content-word ratio, claim density, fallacy detection, dialectical reasoning checks
 - **Corrective directives** — Actionable improvement suggestions targeting weak quality dimensions
-- **Cross-MCP memory symbiosis** — Bridge to [cuba-memorys](https://github.com/lENADRO1910/cuba-memorys) for recall/consolidation
+- **Cross-MCP memory symbiosis** — Bridge to [cuba-memorys](https://github.com/LeandroPG19/cuba-memorys) for recall/consolidation
 - **EWMA reward tracking** — 6-signal composite with adaptive α floor, MACD collapse prediction, Process Advantage Verifier (PAV), and stagnation/fatigue detection
 - **Contradiction detection** — Direct negation, antonym pairs, quantifier conflicts with sentence context
 - **Novelty tracking** — Information gain per thought step via Jaccard distance on TF vectors
@@ -43,7 +43,7 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 ### 2. Build
 
 ```bash
-git clone https://github.com/lENADRO1910/cuba-thinking.git
+git clone https://github.com/LeandroPG19/cuba-thinking.git
 cd cuba-thinking/cuba_cognitive_engine
 cargo build --release
 ```
@@ -299,7 +299,7 @@ Each detected bias includes confidence level, explanation, and actionable sugges
 
 ## Memory Symbiosis
 
-Cross-MCP bridge to [cuba-memorys](https://github.com/lENADRO1910/cuba-memorys):
+Cross-MCP bridge to [cuba-memorys](https://github.com/LeandroPG19/cuba-memorys):
 
 | Stage | Trigger | Injected Instruction |
 |-------|---------|---------------------|
@@ -439,10 +439,10 @@ Every formula verified with unit tests and Wolfram Alpha:
 
 | Project | Purpose |
 |---------|---------|
-| [Cuba-Memorys](https://github.com/lENADRO1910/cuba-memorys) | Persistent memory — knowledge graph, Hebbian learning, RLHF feedback |
+| [Cuba-Memorys](https://github.com/LeandroPG19/cuba-memorys) | Persistent memory — knowledge graph, Hebbian learning, RLHF feedback |
 | **Cuba-Thinking** | Cognitive reasoning — quality metrics, anti-hallucination, PRM, MCTS enforcement |
-| [Cuba-Search](https://github.com/lENADRO1910/cuba-search) | Web search — research, scraping, validation, documentation lookup |
-| [Cuba-Exec](https://github.com/lENADRO1910/cuba-exec) | Command execution — background processes, signals, interactive stdin |
+| [Cuba-Search](https://github.com/LeandroPG19/cuba-search) | Web search — research, scraping, validation, documentation lookup |
+| [Cuba-Exec](https://github.com/LeandroPG19/cuba-exec) | Command execution — background processes, signals, interactive stdin |
 
 Together, they give AI agents **memory + reasoning + search + execution**.
 
@@ -488,5 +488,5 @@ Together, they give AI agents **memory + reasoning + search + execution**.
 
 **Leandro Pérez G.**
 
-- GitHub: [@lENADRO1910](https://github.com/lENADRO1910)
+- GitHub: [@LeandroPG19](https://github.com/LeandroPG19)
 - Email: [leandropatodo@gmail.com](mailto:leandropatodo@gmail.com)
