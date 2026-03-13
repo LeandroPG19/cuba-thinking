@@ -164,7 +164,8 @@ impl McpServer {
                 // Spawn every request in the local task set so the stdin listener isn't blocked!
                 // Essential for Phase 10 Mid-Turn Steering as the task future is !Send due to Bumpalo.
                 tokio::task::spawn_local(async move {
-                    match serde_json::from_str::<RpcRequest>(&req_str) {
+                    let mut req_bytes = req_str.into_bytes();
+                    match simd_json::from_slice::<RpcRequest>(&mut req_bytes) {
                         Ok(req) => {
                             let result = self_clone.handle_request(&req, tx_clone.clone()).await;
 
@@ -186,7 +187,7 @@ impl McpServer {
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Failed to parse JSON-RPC: {} | Error: {}", req_str, e);
+                            tracing::error!("Failed to parse JSON-RPC with simd-json: Error: {}", e);
                             let err_msg = OutgoingMessage::Error(RpcErrorResponse {
                                 jsonrpc: "2.0".to_string(),
                                 id: RequestId::Null,

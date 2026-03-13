@@ -23,8 +23,8 @@ use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::Mutex;
 use std::time::Instant;
+use dashmap::DashMap;
 
 /// Session TTL: 10 minutes.
 const TTL_SECONDS: u64 = 600;
@@ -445,44 +445,54 @@ impl ThoughtSession {
 
 /// Thread-safe session store with TTL-based cleanup.
 pub struct SessionStore {
-    sessions: Mutex<HashMap<u64, ThoughtSession>>,
+    sessions: DashMap<u64, ThoughtSession>,
 }
 
 impl SessionStore {
     pub fn new() -> Self {
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: DashMap::new(),
         }
     }
 
     /// Get or create a session for the given hypothesis.
-    /// Returns a closure-based access pattern to avoid holding the lock.
+    /// Uses DashMap for fine-grained locking and scaling.
     pub fn with_session<F, R>(&self, hypothesis: &str, budget: BudgetMode, f: F) -> R
     where
         F: FnOnce(&mut ThoughtSession) -> R,
     {
         let hash = compute_hypothesis_hash(hypothesis);
-        let mut sessions = self.sessions.lock().unwrap();
 
-        // Cleanup expired sessions (opportunistic)
-        sessions.retain(|_, session| !session.is_expired());
+        // Opportunistic global cleanup of expired sessions to prevent memory leaks
+        // over time from forgotten hypotheses. DashMap's retain is safe for concurrent access.
+        self.sessions.retain(|_, session| !session.is_expired());
 
-        // Get or create
-        let session = sessions
-            .entry(hash)
-            .or_insert_with(|| ThoughtSession::new(hypothesis, budget));
+        // Using DashMap's entry API ensures atomic get-or-create,
+        // preventing race conditions where two threads might insert simultaneously.
+        let mut session_ref = self.sessions.entry(hash).or_insert_with(|| {
+            ThoughtSession::new(hypothesis, budget)
+        });
 
-        // Touch last accessed
-        session.last_accessed = Instant::now();
+        // Reset the session if it's expired
+        if session_ref.is_expired() {
+            *session_ref = ThoughtSession::new(hypothesis, budget);
+        }
 
-        f(session)
+        session_ref.last_accessed = Instant::now();
+        f(&mut *session_ref)
     }
 
     /// Number of active sessions.
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
-        let sessions = self.sessions.lock().unwrap();
-        sessions.values().filter(|s| !s.is_expired()).count()
+        // DashMap count is approximate but fast, we filter expired inline
+        let mut count = 0;
+        for item in self.sessions.iter() {
+            if !item.value().is_expired() {
+                count += 1;
+            }
+        }
+        count
     }
 }
 

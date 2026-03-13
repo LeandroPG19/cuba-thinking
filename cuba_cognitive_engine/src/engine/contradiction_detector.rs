@@ -16,6 +16,7 @@
 
 use serde::Serialize;
 use crate::engine::shared_utils::truncate_str;
+use rayon::prelude::*;
 
 /// Result of contradiction analysis.
 #[derive(Debug, Clone, Serialize)]
@@ -83,47 +84,52 @@ pub fn detect_contradictions(current: &str, previous_claims: &[&str]) -> Contrad
     }
 
     let current_lower = current.to_lowercase();
-    let mut contradictions = Vec::new();
-    let mut checks = 0;
 
-    for prev in previous_claims {
-        let prev_lower = prev.to_lowercase();
-        checks += 1;
+    // Utilize Rayon data parallelism to evaluate previous claims concurrently
+    let found_contradictions: Vec<String> = previous_claims
+        .par_iter()
+        .flat_map(|&prev| {
+            let mut local_contradictions = Vec::new();
+            let prev_lower = prev.to_lowercase();
 
-        // ── Signal 1: Direct negation ──────────────────────────
-        if check_direct_negation(&current_lower, &prev_lower) {
-            contradictions.push(format!(
-                "Direct negation detected vs: \"{}...\"",
-                truncate_str(prev, 50)
-            ));
-        }
+            // ── Signal 1: Direct negation ──────────────────────────
+            if check_direct_negation(&current_lower, &prev_lower) {
+                local_contradictions.push(format!(
+                    "Direct negation detected vs: \"{}...\"",
+                    truncate_str(prev, 50)
+                ));
+            }
 
-        // ── Signal 2: Antonym pairs ────────────────────────────
-        if let Some(pair) = check_antonym_conflict(&current_lower, &prev_lower) {
-            contradictions.push(format!(
-                "Antonym conflict: '{}' vs '{}' in previous claim",
-                pair.0, pair.1
-            ));
-        }
+            // ── Signal 2: Antonym pairs ────────────────────────────
+            if let Some(pair) = check_antonym_conflict(&current_lower, &prev_lower) {
+                local_contradictions.push(format!(
+                    "Antonym conflict: '{}' vs '{}' in previous claim",
+                    pair.0, pair.1
+                ));
+            }
 
-        // ── Signal 3: Quantifier conflicts ─────────────────────
-        if check_quantifier_conflict(&current_lower, &prev_lower) {
-            contradictions.push(format!(
-                "Quantifier conflict vs: \"{}...\"",
-                truncate_str(prev, 50)
-            ));
-        }
-    }
+            // ── Signal 3: Quantifier conflicts ─────────────────────
+            if check_quantifier_conflict(&current_lower, &prev_lower) {
+                local_contradictions.push(format!(
+                    "Quantifier conflict vs: \"{}...\"",
+                    truncate_str(prev, 50)
+                ));
+            }
 
+            local_contradictions
+        })
+        .collect();
+
+    let checks = previous_claims.len();
     let rate = if checks > 0 {
-        (contradictions.len() as f64 / checks as f64).min(1.0)
+        (found_contradictions.len() as f64 / checks as f64).min(1.0)
     } else {
         0.0
     };
 
     ContradictionResult {
         rate,
-        contradictions,
+        contradictions: found_contradictions,
         claims_checked: checks,
     }
 }

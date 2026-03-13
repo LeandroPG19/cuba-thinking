@@ -114,10 +114,15 @@ pub struct LocalReasoningEngine {
 impl LocalReasoningEngine {
     /// Initializes the engine and pre-warms PyO3.
     pub fn new(_model_name: &str, max_concurrent_requests: usize) -> Result<Self> {
-        // Pre-initialize PyO3 to avoid first-call latency
-        Python::with_gil(|py| {
-            debug!("PyO3 v3.0 sandbox pre-warmed. Python {}", py.version());
-        });
+        // Pre-initialize PyO3 to avoid first-call latency.
+        // Even during initialization, we wrap GIL acquisition so it's
+        // explicitly documented that Python shouldn't block the main thread directly
+        // if this was ever converted to async.
+        std::thread::spawn(|| {
+            Python::with_gil(|py| {
+                debug!("PyO3 v3.0 sandbox pre-warmed. Python {}", py.version());
+            });
+        }).join().unwrap();
 
         Ok(Self {
             rate_limiter: Arc::new(Semaphore::new(max_concurrent_requests)),
@@ -490,11 +495,7 @@ if _orig_rlimit_data is not None:
     })
 }
 
-/// DEBT-T02: AST-based security scan using Python's ast module.
-/// Analyzes the actual parse tree, not string patterns.
-/// This eliminates false positives from comments/strings containing blocked words.
-fn ast_security_scan(py: Python<'_>, code: &str) -> Vec<String> {
-    let scan_script = r#"
+static AST_SCAN_SCRIPT: &str = r#"
 import ast
 
 violations = []
@@ -572,10 +573,24 @@ else:
 _violations_result_ = violations
 "#;
 
+use std::sync::OnceLock;
+
+static COMPILED_SCAN_SCRIPT: OnceLock<pyo3::Py<pyo3::types::PyAny>> = OnceLock::new();
+
+/// DEBT-T02: AST-based security scan using Python's ast module.
+/// Analyzes the actual parse tree, not string patterns.
+/// This eliminates false positives from comments/strings containing blocked words.
+fn ast_security_scan(py: Python<'_>, code: &str) -> Vec<String> {
     let globals = pyo3::types::PyDict::new_bound(py);
     globals.set_item("_code_input_", code).unwrap_or(());
 
-    if py.run_bound(scan_script, Some(&globals), None).is_err() {
+    let compiled_code = COMPILED_SCAN_SCRIPT.get_or_init(|| {
+        let builtins = py.import_bound("builtins").unwrap();
+        builtins.call_method1("compile", (AST_SCAN_SCRIPT, "scan.py", "exec")).unwrap().into()
+    });
+
+    let builtins = py.import_bound("builtins").unwrap();
+    if builtins.call_method1("exec", (compiled_code.bind(py), &globals)).is_err() {
         return vec![]; // Parse errors handled during execution
     }
 
@@ -585,9 +600,7 @@ _violations_result_ = violations
         .unwrap_or_default()
 }
 
-/// Run AST analysis on Python code via PyO3.
-fn run_ast_analysis(py: Python<'_>, code: &str) -> AstAnalysis {
-    let analysis_script = r#"
+static AST_ANALYSIS_SCRIPT: &str = r#"
 import ast
 
 try:
@@ -638,10 +651,20 @@ else:
     }
 "#;
 
+static COMPILED_ANALYSIS_SCRIPT: OnceLock<pyo3::Py<pyo3::types::PyAny>> = OnceLock::new();
+
+/// Run AST analysis on Python code via PyO3.
+fn run_ast_analysis(py: Python<'_>, code: &str) -> AstAnalysis {
     let globals = pyo3::types::PyDict::new_bound(py);
     globals.set_item("_code_input_", code).unwrap_or(());
 
-    if py.run_bound(analysis_script, Some(&globals), None).is_err() {
+    let compiled_code = COMPILED_ANALYSIS_SCRIPT.get_or_init(|| {
+        let builtins = py.import_bound("builtins").unwrap();
+        builtins.call_method1("compile", (AST_ANALYSIS_SCRIPT, "analyze.py", "exec")).unwrap().into()
+    });
+
+    let builtins = py.import_bound("builtins").unwrap();
+    if builtins.call_method1("exec", (compiled_code.bind(py), &globals)).is_err() {
         return AstAnalysis {
             security_violations: vec!["AST analysis failed".to_string()],
             ..AstAnalysis::empty()
