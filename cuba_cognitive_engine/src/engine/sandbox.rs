@@ -70,6 +70,9 @@ pub struct AstAnalysis {
     pub cyclomatic_complexity: usize,
     /// Number of assert statements found.
     pub assert_count: usize,
+    /// V7 (P3-C): Number of unique variable names targeted in assertions.
+    /// Distinguishes diverse testing from repetitive assertions (gaming vector).
+    pub unique_assert_targets: usize,
     /// Number of function definitions.
     pub function_count: usize,
     /// Number of import statements.
@@ -88,6 +91,7 @@ impl AstAnalysis {
         Self {
             cyclomatic_complexity: 0,
             assert_count: 0,
+            unique_assert_targets: 0,
             function_count: 0,
             import_count: 0,
             has_type_hints: false,
@@ -689,6 +693,7 @@ except SyntaxError as e:
 else:
     cc = 1
     asserts = 0
+    assert_targets = set()
     functions = 0
     imports = 0
     type_hints = False
@@ -703,6 +708,11 @@ else:
             cc += len(node.handlers)
         elif isinstance(node, ast.Assert):
             asserts += 1
+            # V7 (P3-C): Track unique variables in assert targets.
+            # Counts Name nodes in the assertion test expression.
+            for child in ast.walk(node.test):
+                if isinstance(child, ast.Name):
+                    assert_targets.add(child.id)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             functions += 1
             if node.returns:
@@ -722,7 +732,8 @@ else:
     _result_ = {
         "cc": cc, "asserts": asserts, "functions": functions,
         "imports": imports, "type_hints": type_hints,
-        "deterministic": not non_deterministic
+        "deterministic": not non_deterministic,
+        "unique_assert_targets": len(assert_targets)
     }
 "#;
 
@@ -765,6 +776,7 @@ else:
     AstAnalysis {
         cyclomatic_complexity: extract_usize(c_str!("_result_.get('cc', 0)"), 0),
         assert_count: extract_usize(c_str!("_result_.get('asserts', 0)"), 0),
+        unique_assert_targets: extract_usize(c_str!("_result_.get('unique_assert_targets', 0)"), 0),
         function_count: extract_usize(c_str!("_result_.get('functions', 0)"), 0),
         import_count: extract_usize(c_str!("_result_.get('imports', 0)"), 0),
         has_type_hints: extract_bool(c_str!("_result_.get('type_hints', False)"), false),

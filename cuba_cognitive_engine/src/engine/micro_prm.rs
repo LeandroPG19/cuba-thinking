@@ -1,9 +1,9 @@
 // src/engine/micro_prm.rs
 //
-// N3: Process Reward Model (PRM) — 7-Signal Step Verification
+// N3: Process Reward Model (PRM) — 8-Signal Step Verification
 //
 // Based on Lightman et al. 2023 "Let's Verify Step by Step" (OpenAI).
-// Evaluates each thought step with 7 independent verification signals,
+// Evaluates each thought step with 8 independent verification signals,
 // producing a composite PRM score that feeds into the EWMA tracker.
 //
 // Signals:
@@ -12,13 +12,14 @@
 // E3: Complexity  — CC ≤ 10 (McCabe 1976, manageable code)
 // E4: Type Safety — Has type annotations (structural quality)
 // E5: Imports     — Uses standard/safe imports (no blocked modules)
-// E6: Determinism — No random/time dependencies (reproducible)  
+// E6: Determinism — No random/time dependencies (reproducible)
 // E7: Coverage    — Assert-to-function ratio (test coverage proxy)
+// E8: Diversity   — Unique assert targets (anti-gaming, P3-C)
 
 use crate::engine::sandbox::SandboxResult;
 use serde::Serialize;
 
-/// PRM evaluation result with 7 independent signals.
+/// PRM evaluation result with 8 independent signals.
 #[derive(Debug, Clone, Serialize)]
 pub struct PrmVerdict {
     /// Individual signal scores (0.0 or 1.0 each).
@@ -31,7 +32,7 @@ pub struct PrmVerdict {
     pub explanations: Vec<String>,
 }
 
-/// The 7 verification signals.
+/// The 8 verification signals.
 #[derive(Debug, Clone, Serialize)]
 pub struct PrmSignals {
     /// E1: Code compiled and executed successfully.
@@ -48,18 +49,21 @@ pub struct PrmSignals {
     pub deterministic: f64,
     /// E7: Assert-to-function ratio (coverage proxy).
     pub coverage: f64,
+    /// V7 (P3-C): E8: Assertion diversity (unique targets / total asserts).
+    pub assert_diversity: f64,
 }
 
 /// Signal weights for composite score.
 /// E1 (compiles) and E2 (asserts) are the most important.
-const WEIGHTS: [f64; 7] = [
-    0.30, // E1: Compiles (most critical)
+const WEIGHTS: [f64; 8] = [
+    0.25, // E1: Compiles (most critical)
     0.25, // E2: Asserts pass
     0.10, // E3: Complexity
-    0.10, // E4: Type safety
+    0.08, // E4: Type safety
     0.05, // E5: Safe imports
     0.10, // E6: Determinism
-    0.10, // E7: Coverage
+    0.07, // E7: Coverage
+    0.10, // E8: Assert diversity (P3-C)
 ];
 
 /// Evaluate a sandbox execution result with 7 PRM signals.
@@ -157,7 +161,24 @@ pub fn evaluate_prm(sandbox: &SandboxResult) -> PrmVerdict {
         func_count
     ));
 
-    // ─── Composite Score ─────────────────────────────────────
+    // ─── E8: Assertion Diversity (P3-C) ──────────────────
+    let unique_targets = sandbox.ast_analysis.unique_assert_targets;
+    let e8 = if assert_count == 0 {
+        0.5 // No assertions — neutral (same as no-asserts E2)
+    } else if unique_targets == 0 {
+        0.3 // Assertions exist but no named variables (bare literals)
+    } else {
+        let diversity_ratio = unique_targets as f64 / assert_count as f64;
+        diversity_ratio.clamp(0.0, 1.0)
+    };
+    explanations.push(format!(
+        "{} E8 Diversity: {} unique targets / {} assertions",
+        if e8 >= 0.5 { "✅" } else { "⚠️" },
+        unique_targets,
+        assert_count
+    ));
+
+    // ─── Composite Score ─────────────────────────────
     let signals = PrmSignals {
         compiles: e1,
         asserts_pass: e2,
@@ -166,9 +187,10 @@ pub fn evaluate_prm(sandbox: &SandboxResult) -> PrmVerdict {
         imports_safe: e5,
         deterministic: e6,
         coverage: e7,
+        assert_diversity: e8,
     };
 
-    let signal_values = [e1, e2, e3, e4, e5, e6, e7];
+    let signal_values = [e1, e2, e3, e4, e5, e6, e7, e8];
     let composite_score: f64 = signal_values
         .iter()
         .zip(WEIGHTS.iter())
@@ -211,6 +233,7 @@ pub fn evaluate_static(code: &str) -> PrmVerdict {
     let e5 = if !code.contains("subprocess") && !code.contains("os.system") { 1.0 } else { 0.0 };
     let e6 = if !code.contains("random") { 1.0 } else { 0.5 };
     let e7 = if has_asserts { 0.5 } else { 0.1 };
+    let e8 = if has_asserts { 0.5 } else { 0.2 }; // P3-C: Can't measure without AST
 
     let signals = PrmSignals {
         compiles: e1,
@@ -220,9 +243,10 @@ pub fn evaluate_static(code: &str) -> PrmVerdict {
         imports_safe: e5,
         deterministic: e6,
         coverage: e7,
+        assert_diversity: e8,
     };
 
-    let signal_values = [e1, e2, e3, e4, e5, e6, e7];
+    let signal_values = [e1, e2, e3, e4, e5, e6, e7, e8];
     let composite_score: f64 = signal_values
         .iter()
         .zip(WEIGHTS.iter())
@@ -241,6 +265,7 @@ pub fn evaluate_static(code: &str) -> PrmVerdict {
             format!("{} E5 Imports: {}", if has_imports {"✅"} else {"—"}, if has_imports {"Present"} else {"No imports"}),
             format!("{} E6 Determinism: {}", if !code.contains("random") {"✅"} else {"⚠️"}, if !code.contains("random") {"Deterministic"} else {"Non-deterministic"}),
             format!("{} E7 Coverage: {}", if has_asserts {"✅"} else {"⚠️"}, if has_asserts {"With verifications"} else {"No verifications"}),
+            format!("⚠️ E8 Diversity: Static analysis (no AST)"),
         ],
     }
 }
@@ -259,6 +284,7 @@ mod tests {
             ast_analysis: AstAnalysis {
                 cyclomatic_complexity: 3,
                 assert_count: 2,
+                unique_assert_targets: 2,
                 function_count: 1,
                 import_count: 0,
                 has_type_hints: true,
@@ -286,6 +312,7 @@ mod tests {
             ast_analysis: AstAnalysis {
                 cyclomatic_complexity: 1,
                 assert_count: 1,
+                unique_assert_targets: 1,
                 function_count: 0,
                 import_count: 0,
                 has_type_hints: false,

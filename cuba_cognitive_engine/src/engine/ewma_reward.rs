@@ -51,17 +51,52 @@ impl RewardSignals {
     /// G6: Applies redundancy penalty when info_gain is near-zero
     /// (ROSCOE, Golovneva 2023; ReasonEval 2024).
     pub fn composite(&self) -> f64 {
-        let raw = W_QUALITY * self.quality
-            + W_COHERENCE * self.coherence
-            + W_CONTRADICTION * (1.0 - self.contradiction_rate)
-            + W_FAITHFULNESS * self.faithfulness
-            + W_INFO_GAIN * self.info_gain
-            + W_GROUNDING * self.grounding;
+        self.composite_inner(W_QUALITY, W_COHERENCE, W_CONTRADICTION, W_FAITHFULNESS, W_INFO_GAIN, W_GROUNDING)
+    }
+
+    /// V7 (P3-E): Stage-adaptive composite scoring.
+    ///
+    /// Early stages (DEFINE/RESEARCH) boost quality weight to reward
+    /// breadth of exploration. Late stages (VERIFY/SYNTHESIZE) boost
+    /// faithfulness + grounding to reward rigor and evidence.
+    ///
+    /// Accepts stage as lowercase string slice for loose coupling.
+    /// Reserved for EwmaTracker::update integration when stage context
+    /// is plumbed through the pipeline.
+    #[allow(dead_code)]
+    pub fn composite_for_stage(&self, stage: Option<&str>) -> f64 {
+        let (wq, wc, wcr, wf, wi, wg) = match stage {
+            Some("define" | "research") => (
+                0.45, // +0.05 quality: reward exploration
+                0.20, // coherence unchanged
+                0.10, // contradiction unchanged
+                0.05, // -0.05 faithfulness: less strict early
+                0.15, // +0.05 info_gain: reward novelty
+                0.05, // -0.05 grounding: less strict early
+            ),
+            Some("verify" | "synthesize") => (
+                0.30, // -0.10 quality: less weight on breadth
+                0.15, // -0.05 coherence: allow focused jumps
+                0.10, // contradiction unchanged
+                0.20, // +0.10 faithfulness: reward rigor
+                0.05, // -0.05 info_gain: less novelty pressure
+                0.20, // +0.10 grounding: demand evidence
+            ),
+            _ => (W_QUALITY, W_COHERENCE, W_CONTRADICTION, W_FAITHFULNESS, W_INFO_GAIN, W_GROUNDING),
+        };
+        self.composite_inner(wq, wc, wcr, wf, wi, wg)
+    }
+
+    /// Internal composite computation with given weights.
+    fn composite_inner(&self, wq: f64, wc: f64, wcr: f64, wf: f64, wi: f64, wg: f64) -> f64 {
+        let raw = wq * self.quality
+            + wc * self.coherence
+            + wcr * (1.0 - self.contradiction_rate)
+            + wf * self.faithfulness
+            + wi * self.info_gain
+            + wg * self.grounding;
 
         // G6: Continuous exponential redundancy penalty (FIX-4).
-        // f(x) = 1 - e^(-k*x), k=15 gives smooth [0,1] → [0,1] mapping.
-        // At info_gain=0.05: ≈0.53, at 0.10: ≈0.78, at 0.20: ≈0.95.
-        // Floor of 0.10 prevents total annihilation on first (always-novel) thought.
         let redundancy_multiplier = (1.0 - (-15.0 * self.info_gain).exp()).max(0.10);
 
         raw * redundancy_multiplier
@@ -509,5 +544,55 @@ mod tests {
             !tracker.is_collapsing_kinematically(),
             "Fewer than 4 data points should safely return false"
         );
+    }
+
+    // ─── V7 (P3-E): Stage-Adaptive Composite Tests ────────
+
+    #[test]
+    fn test_stage_adaptive_weights_sum_to_one() {
+        // Verify all stage weight sets sum to 1.0
+        let signals = RewardSignals {
+            quality: 1.0, faithfulness: 1.0, coherence: 1.0,
+            contradiction_rate: 0.0, info_gain: 1.0, grounding: 1.0,
+        };
+        let default = signals.composite();
+        let define = signals.composite_for_stage(Some("define"));
+        let verify = signals.composite_for_stage(Some("verify"));
+        let none = signals.composite_for_stage(None);
+        // All should produce same score when all signals = 1.0
+        // (because weights sum to 1.0 regardless of distribution)
+        assert!((default - none).abs() < 1e-10, "None stage should match default");
+        assert!((default - define).abs() < 1e-10, "All-1.0 signals should match regardless of weights");
+        assert!((default - verify).abs() < 1e-10, "All-1.0 signals should match regardless of weights");
+    }
+
+    #[test]
+    fn test_stage_adaptive_define_boosts_quality() {
+        let signals = RewardSignals {
+            quality: 0.9, faithfulness: 0.3, coherence: 0.7,
+            contradiction_rate: 0.0, info_gain: 0.8, grounding: 0.3,
+        };
+        let default_score = signals.composite();
+        let define_score = signals.composite_for_stage(Some("define"));
+        // DEFINE boosts quality+info_gain, reduces faithfulness+grounding
+        // With high quality (0.9) and low faithfulness (0.3), DEFINE should score higher
+        assert!(define_score > default_score,
+            "DEFINE stage should boost score for high-quality/low-faithfulness: define={:.4} vs default={:.4}",
+            define_score, default_score);
+    }
+
+    #[test]
+    fn test_stage_adaptive_verify_boosts_faithfulness() {
+        let signals = RewardSignals {
+            quality: 0.4, faithfulness: 0.9, coherence: 0.5,
+            contradiction_rate: 0.0, info_gain: 0.3, grounding: 0.9,
+        };
+        let default_score = signals.composite();
+        let verify_score = signals.composite_for_stage(Some("verify"));
+        // VERIFY boosts faithfulness+grounding, reduces quality+info_gain
+        // With high faithfulness (0.9) and low quality (0.4), VERIFY should score higher
+        assert!(verify_score > default_score,
+            "VERIFY stage should boost score for high-faithfulness/low-quality: verify={:.4} vs default={:.4}",
+            verify_score, default_score);
     }
 }

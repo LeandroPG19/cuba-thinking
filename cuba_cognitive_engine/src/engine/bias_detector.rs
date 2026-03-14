@@ -227,30 +227,57 @@ fn check_bandwagon_bias(lower: &str) -> Option<DetectedBias> {
 }
 
 /// Repetition anchoring: structural repetition across previous thoughts.
+///
+/// V7 (P3-D): Uses Jaccard similarity over full word bags instead of
+/// first-10-words sequential matching. Sequential `.zip()` only caught
+/// thoughts starting identically; Jaccard catches semantic repetition
+/// even when word order differs (reasoning loops with varied openings).
 fn check_repetition_bias(lower: &str, previous_thoughts: &[&str]) -> Option<DetectedBias> {
     if previous_thoughts.len() < 3 {
         return None;
     }
 
-    let current_words: Vec<&str> = lower.split_whitespace().take(10).collect();
-    let similar_starts = previous_thoughts
+    // Build word set for current thought (stopwords excluded for signal)
+    let stopwords = [
+        "the", "a", "an", "is", "are", "was", "were", "be", "been",
+        "to", "of", "in", "for", "on", "with", "at", "by", "from",
+        "it", "this", "that", "and", "or", "but", "not", "as",
+        "el", "la", "los", "las", "un", "una", "de", "en", "con",
+        "por", "para", "es", "son", "no", "que", "se", "del",
+    ];
+
+    let current_words: std::collections::HashSet<&str> = lower
+        .split_whitespace()
+        .filter(|w| w.len() > 2 && !stopwords.contains(w))
+        .collect();
+
+    if current_words.len() < 3 {
+        return None; // Too few content words to judge
+    }
+
+    let similar_count = previous_thoughts
         .iter()
         .filter(|prev| {
             let prev_lower = prev.to_lowercase();
-            let prev_words: Vec<&str> = prev_lower
+            let prev_words: std::collections::HashSet<&str> = prev_lower
                 .split_whitespace()
-                .take(10)
-                .collect::<Vec<_>>();
-            let matching = current_words
-                .iter()
-                .zip(prev_words.iter())
-                .filter(|(a, b)| a == b)
-                .count();
-            matching as f64 / current_words.len().max(1) as f64 > 0.6
+                .filter(|w| w.len() > 2 && !stopwords.contains(w))
+                .collect();
+
+            if prev_words.is_empty() {
+                return false;
+            }
+
+            // Jaccard coefficient: |A ∩ B| / |A ∪ B|
+            let intersection = current_words.intersection(&prev_words).count();
+            let union = current_words.union(&prev_words).count();
+            let jaccard = intersection as f64 / union.max(1) as f64;
+
+            jaccard > 0.50 // Stricter than sequential (0.6) since Jaccard is already tighter
         })
         .count();
 
-    if similar_starts >= 2 {
+    if similar_count >= 2 {
         Some(DetectedBias {
             bias_type: BiasType::Anchoring,
             confidence: 0.6,
