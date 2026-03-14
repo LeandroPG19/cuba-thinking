@@ -462,7 +462,10 @@ impl SessionStore {
         F: FnOnce(&mut ThoughtSession) -> R,
     {
         let hash = compute_hypothesis_hash(hypothesis);
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| {
+            tracing::warn!("SessionStore mutex was poisoned in with_session(), recovering");
+            e.into_inner()
+        });
 
         // Cleanup expired sessions (opportunistic)
         sessions.retain(|_, session| !session.is_expired());
@@ -481,7 +484,10 @@ impl SessionStore {
     /// Number of active sessions.
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
-        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let sessions = self.sessions.lock().unwrap_or_else(|e| {
+            tracing::warn!("SessionStore mutex was poisoned in active_count(), recovering");
+            e.into_inner()
+        });
         sessions.values().filter(|s| !s.is_expired()).count()
     }
 }
