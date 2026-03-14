@@ -158,6 +158,14 @@ impl ThoughtSession {
         // V5-1: Snapshot BEFORE mutation — allows rollback if MCTS rejects this thought
         self.thought_snapshots.insert(idx, self.thoughts.len());
 
+        // F4: Prune stale snapshots — retain only entries for thoughts still in
+        // the ring buffer window, preventing unbounded HashMap growth.
+        // At most MAX_THOUGHTS snapshots survive (one per ring buffer slot).
+        if self.thought_snapshots.len() > MAX_THOUGHTS * 2 {
+            let min_thought = idx.saturating_sub(MAX_THOUGHTS);
+            self.thought_snapshots.retain(|&k, _| k >= min_thought);
+        }
+
         // Ring buffer: evict oldest if at capacity
         if self.thoughts.len() >= MAX_THOUGHTS {
             self.thoughts.pop_front();
@@ -444,6 +452,19 @@ impl ThoughtSession {
 }
 
 /// Thread-safe session store with TTL-based cleanup.
+///
+/// # Concurrency Note (F3)
+///
+/// Uses `std::sync::Mutex` (not `tokio::sync::Mutex`) because:
+/// 1. All closures passed to `with_session` are sync and O(μs) —
+///    no I/O, no awaits, just in-memory data manipulation.
+/// 2. Current transport is STDIO (single client, zero contention).
+/// 3. `tokio::sync::Mutex` would require `async FnOnce` closures
+///    (not yet stable in Rust) or a complete API redesign.
+///
+/// **IMPORTANT**: If a concurrent transport (REST/WebSocket) is added,
+/// this MUST be migrated to `tokio::sync::Mutex` or `DashMap` to prevent
+/// blocking the tokio worker thread pool under contention.
 pub struct SessionStore {
     sessions: Mutex<HashMap<u64, ThoughtSession>>,
 }
