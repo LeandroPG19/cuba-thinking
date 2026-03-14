@@ -118,8 +118,25 @@ impl CognitiveStage {
     }
 }
 
+/// P2-4: Stage detection from explicit metadata.
+/// Prioritizes user-specified stage over content heuristics.
+/// Returns None if the metadata stage string is invalid or missing.
+#[allow(dead_code)]
+pub fn detect_stage_from_metadata(stage_str: &str) -> Option<CognitiveStage> {
+    match stage_str.to_uppercase().as_str() {
+        "DEFINE" => Some(CognitiveStage::Define),
+        "RESEARCH" => Some(CognitiveStage::Research),
+        "ANALYZE" => Some(CognitiveStage::Analyze),
+        "HYPOTHESIZE" => Some(CognitiveStage::Hypothesize),
+        "VERIFY" => Some(CognitiveStage::Verify),
+        "SYNTHESIZE" => Some(CognitiveStage::Synthesize),
+        _ => None,
+    }
+}
+
 /// Auto-detection of cognitive stage from thought content.
 /// Uses keyword heuristics when the user doesn't specify a stage.
+/// Prefer `detect_stage_from_metadata()` when explicit stage is available.
 pub fn detect_stage(thought: &str) -> CognitiveStage {
     let lower = thought.to_lowercase();
 

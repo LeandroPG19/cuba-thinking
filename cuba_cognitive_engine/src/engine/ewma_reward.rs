@@ -240,11 +240,12 @@ impl EwmaTracker {
     }
 
     /// Find the best thought index (highest reward) for backtracking.
+    /// P1-4: total_cmp() provides NaN-safe total ordering (NaN sorts to end).
     pub fn best_thought_index(&self) -> Option<usize> {
         self.reward_history
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
             .map(|(i, _)| i)
     }
 

@@ -81,7 +81,9 @@ pub fn compute_quality(thought: &str, context_keywords: &[&str]) -> QualityScore
 /// Shannon, C. (1948). "A Mathematical Theory of Communication."
 fn compute_word_entropy(text: &str) -> f64 {
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.is_empty() {
+    // P2-1: Degenerate inputs — ≤2 words can't produce meaningful entropy.
+    // Single unique word with max(len, 2) creates artificial max_entropy=log2(2).
+    if words.len() <= 2 {
         return 0.0;
     }
 
