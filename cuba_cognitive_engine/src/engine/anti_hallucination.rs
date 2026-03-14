@@ -414,8 +414,16 @@ fn compute_grounding_ratio(text: &str, total_claims: usize) -> f64 {
 
 /// Phase 5C: Check for Chain-of-Verification (CoVe) structure.
 ///
-/// CoVe (Dhuliawala et al., Meta AI 2023) verifies that reasoning contains
-/// self-verification patterns — the model should check its own assertions.
+/// CoVe (Dhuliawala et al., Meta AI 2023, ACL 2024) verifies that
+/// reasoning contains self-verification patterns. The 4-step process is:
+///   1. Draft initial response
+///   2. Plan verification questions
+///   3. Answer verification questions independently
+///   4. Generate verified response
+///
+/// V7 (P3-B): Enhanced to detect verification questions (?),
+/// not just assertion keywords. Thoughts that ask self-questioning
+/// ("does this hold?", "is this assumption valid?") score higher.
 ///
 /// Returns true if CoVe patterns are detected.
 fn check_cove_structure(thought: &str, thought_number: usize) -> bool {
@@ -438,10 +446,29 @@ fn check_cove_structure(thought: &str, thought_number: usize) -> bool {
         "por lo tanto", "lo que significa", "lo cual demuestra",
     ];
 
-    let cove_count = cove_markers.iter().filter(|m| lower.contains(**m)).count();
+    let keyword_count = cove_markers.iter().filter(|m| lower.contains(**m)).count();
 
-    // Need at least 1 verification marker by thought 3+
-    cove_count >= 1
+    // V7 (P3-B): Detect verification questions (CoVe step 2-3).
+    // Questions near verification context indicate self-questioning.
+    let question_markers = [
+        "does this", "is this", "can we", "have we", "should we",
+        "what if", "why does", "how does", "are we sure",
+        "¿es correcto", "¿funciona", "¿podemos", "¿estamos seguros",
+    ];
+    let has_question = thought.contains('?');
+    let has_verification_question = has_question
+        && question_markers.iter().any(|m| lower.contains(m));
+
+    // Scoring: keywords + question bonus
+    let cove_score = keyword_count + if has_verification_question { 2 } else { 0 };
+
+    // Thoughts 3-4: need at least 1 marker (lenient)
+    // Thoughts 5+: need at least 2 markers (stricter — expect mature reasoning)
+    if thought_number >= 5 {
+        cove_score >= 2
+    } else {
+        cove_score >= 1
+    }
 }
 
 /// G4: Detect reward gaming patterns (Everitt et al., 2021).
