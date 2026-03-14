@@ -131,7 +131,7 @@ impl LocalReasoningEngine {
     /// Initializes the engine and pre-warms PyO3.
     pub fn new(_model_name: &str, max_concurrent_requests: usize) -> Result<Self> {
         // Pre-initialize PyO3 to avoid first-call latency
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             debug!("PyO3 v3.0 sandbox pre-warmed. Python {}", py.version());
         });
 
@@ -314,7 +314,7 @@ fn execute_in_sandbox(code: &str) -> SandboxResult {
         };
     }
 
-    Python::with_gil(|py| {
+    Python::attach(|py| {
         // ─── Step 1: AST-Based Security Scan (DEBT-T02) ──────
         let security_result = ast_security_scan(py, code);
         if !security_result.is_empty() {
@@ -917,7 +917,7 @@ mod tests {
 
     #[test]
     fn test_ast_security_scan_clean() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let violations = ast_security_scan(py, "x = 1 + 2\nassert x == 3");
             assert!(violations.is_empty());
         });
@@ -925,7 +925,7 @@ mod tests {
 
     #[test]
     fn test_ast_security_scan_blocks_import() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let violations = ast_security_scan(py, "import subprocess\nsubprocess.run(['ls'])");
             assert!(!violations.is_empty(), "Expected violation for subprocess import");
         });
@@ -936,7 +936,7 @@ mod tests {
         // DEBT-T02: Comments mentioning blocked modules should NOT trigger
         // P2-3: Note that `x = 42; assert x == 42` now correctly triggers
         // TRIVIAL_ASSERTION (Pattern 3), so we use a non-trivial test.
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let code = "# This uses subprocess internally\nx = 40 + 2\nassert x == 42";
             let violations = ast_security_scan(py, code);
             assert!(violations.is_empty(), "Comment should not trigger: {:?}", violations);
@@ -945,7 +945,7 @@ mod tests {
 
     #[test]
     fn test_ast_security_blocks_eval() {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let violations = ast_security_scan(py, "result = eval('1 + 1')");
             assert!(!violations.is_empty(), "Expected violation for eval()");
         });

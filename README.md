@@ -1,8 +1,8 @@
 # 🧠 Cuba-Thinking
 
-**Advanced cognitive reasoning engine for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive pipeline, 9-layer anti-hallucination, MCTS quality enforcement, 8-signal Process Reward Model (PRM) with Veto Gate, bias detection, metacognitive analysis, persistent thought sessions, Graph-of-Thought topology with Kahn's DP longest path, mode collapse detection, Softmax Gated Attention reward scoring, CUSUM change-point detection, and cross-MCP memory symbiosis.
+**Advanced cognitive reasoning engine for AI agents** — A Model Context Protocol (MCP) server that enhances AI reasoning with a 6-stage cognitive pipeline, 9-layer anti-hallucination, MCTS quality enforcement, 8-signal Process Reward Model (PRM) with Veto Gate, bias detection, metacognitive analysis, persistent thought sessions, Graph-of-Thought topology with Kahn's DP longest path, mode collapse detection, Softmax Gated Attention reward scoring, CUSUM change-point detection, ONNX semantic embeddings (fastembed), NLI contradiction detection (rust-bert), Flesch-Kincaid readability scoring, and cross-MCP memory symbiosis.
 
-3 tools. Zero cloud dependencies. 183 tests. 9 audit rounds. 16 magic constants formally verified.
+3 tools. Zero cloud dependencies. 186 tests. 9 audit rounds. 16 magic constants formally verified.
 
 ---
 
@@ -12,15 +12,15 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 
 - **6-stage cognitive engine** — Bloom's Taxonomy state machine: DEFINE → RESEARCH → ANALYZE → HYPOTHESIZE → VERIFY → SYNTHESIZE
 - **9-layer anti-hallucination** — Assumption tracking, confidence calibration, CoVe structure with verification question detection, evidence accumulation, claim grounding (per-claim proximity), EWMA threshold enforcement, contradiction detection, warmup guard, anti-overthinking
-- **6D quality metrics** — Clarity (Root-TTR), Depth (clause counting), Breadth (noun diversity), Logic (connective density), Relevance (TF-IDF cosine), Actionability (imperative + specificity)
+- **6D quality metrics** — Clarity (Root-TTR 40% + Flesch-Kincaid 30% + Sentence Consistency 30%), Depth (clause counting), Breadth (noun diversity), Logic (connective density), Relevance (TF-IDF cosine), Actionability (imperative + specificity)
 - **Process Reward Model (PRM)** — 8-signal code evaluation with V9 Logical Veto Gate: `Gate × (0.6×Verify + 0.4×Quality)` prevents uncompilable code from scoring high
-- **Sandboxed execution** — PyO3 sandbox with AST-based security scan, RLIMIT_AS 512MB memory cap, recursion limit 100, nesting depth 100, PEP 578 audit hooks, ReDoS guard, Z3 vacuous truth detector
+- **Sandboxed execution** — PyO3 0.28 sandbox with AST-based security scan, RLIMIT_AS 512MB memory cap, recursion limit 100, nesting depth 100, PEP 578 audit hooks, ReDoS guard, Z3 vacuous truth detector. Supports **numpy**, **sympy**, and **scipy**
 - **MCTS forced backtracking** — Protocol-level rejection (`isError: true`) when EWMA drops below budget-aware threshold, with hedged rejection zones
 - **MCTS Graph** — Arena-allocated PUCT + Adaptive UCT (variance-based c_puct, correlation_lambda) — superior to standard UCB1
 - **Graph-of-Thought (GoT)** — DAG topology with Kahn's topological sort + DP for correct longest-path depth, Tarjan SCC cycle detection O(V+E) for circular reasoning
 - **Persistent thought sessions** — Cross-call state accumulation: EWMA, novelty, graph, confidence oscillation, depth degradation, root-anchoring, hypothesis drift
 - **Epistemological rollback** — Snapshot/rollback of session state when MCTS rejects a thought, preventing hallucinated premises from poisoning future reasoning
-- **Mode collapse detection** — OrthogonalityGuard: Jaccard similarity against failed thoughts detects paraphrased rejected ideas
+- **Mode collapse detection** — OrthogonalityGuard: Jaccard similarity + semantic embedding similarity against failed thoughts detects paraphrased rejected ideas
 - **Bias detection** — 5 cognitive biases (Anchoring, Confirmation, Availability, Sunk Cost, Bandwagon) with confidence + actionable suggestions
 - **Metacognitive analysis** — Filler ratio, content-word ratio (Coh-Metrix), claim density, fallacy detection, dialectical reasoning checks
 - **Corrective directives** — 3 severity levels (INFO/WARNING/CORRECTION), prescriptive improvement targeting weak quality dimensions
@@ -30,8 +30,8 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 - **CUSUM change-point detection** — Lag-free quality collapse detection replacing MACD (μ=0.70, k=0.05, h=0.15)
 - **Cross-MCP memory symbiosis** — Bridge to [cuba-memorys](https://github.com/LeandroPG19/cuba-memorys) with anti-repetition guard
 - **EWMA reward tracking** — 6-signal composite with adaptive α floor, stage-adaptive weight profiles, CUSUM collapse prediction, Process Advantage Verifier (PAV), stagnation/fatigue detection
-- **Contradiction detection** — Direct negation, 30+ antonym pairs, quantifier conflicts with sentence context
-- **Novelty tracking** — Shannon information gain per thought step via Jaccard distance on TF vectors
+- **Contradiction detection** — NLI zero-shot classification (rust-bert) + direct negation, 30+ antonym pairs, quantifier conflicts with sentence context
+- **Novelty tracking** — Shannon information gain per thought step via Jaccard distance + semantic embedding similarity (fastembed BGE-small, 384-dim) for paraphrase detection
 - **Depth degradation** — Tracks quality.depth history per thought, detects >50% drop vs baseline (KV cache saturation proxy)
 - **Code-aware metrics** — Quality, depth, and directives adapt when input is code vs natural language
 - **Anti-overthinking** — Stagnation detection, fatigue monitoring, mode collapse guard, early stopping signals
@@ -42,8 +42,9 @@ AI agents think in flat, unstructured sequences. Cuba-Thinking gives them:
 
 ### 1. Prerequisites
 
-- **Rust 1.75+** & **Cargo**
+- **Rust 1.83+** & **Cargo**
 - **Python 3.10+** (for PRM sandbox execution)
+- **libtorch** — auto-downloaded by `rust-bert` during build (~2GB, CPU-only)
 
 ### 2. Build
 
@@ -53,22 +54,46 @@ cd cuba-thinking/cuba_cognitive_engine
 cargo build --release
 ```
 
+> **Note:** First build downloads ONNX model files (~33MB for fastembed) and libtorch (~2GB for rust-bert). Subsequent builds are cached.
+
 ### 3. Configure your AI editor
 
-Add to your MCP configuration (e.g., `mcp_config.json`):
+Add to your MCP configuration (e.g., `mcp_config.json`). You **must** set `LD_LIBRARY_PATH` to the libtorch directory inside the build artifacts:
 
 ```json
 {
   "mcpServers": {
     "cuba-thinking": {
       "command": "/path/to/cuba-thinking/cuba_cognitive_engine/target/release/cuba_cognitive_engine",
+      "args": [],
+      "env": {
+        "LD_LIBRARY_PATH": "/path/to/cuba-thinking/cuba_cognitive_engine/target/release/build/torch-sys-<hash>/out/libtorch/libtorch/lib"
+      }
+    }
+  }
+}
+```
+
+To find the exact path:
+
+```bash
+find target/release/build -path '*/torch-sys-*/out/libtorch/libtorch/lib' -type d
+```
+
+Alternatively, use the included wrapper script:
+
+```json
+{
+  "mcpServers": {
+    "cuba-thinking": {
+      "command": "/path/to/cuba-thinking/run_mcp.sh",
       "args": []
     }
   }
 }
 ```
 
-Zero environment variables. Zero cloud API keys. Runs 100% locally.
+Zero cloud API keys. Runs 100% locally. Models auto-download on first run.
 
 ---
 
@@ -350,9 +375,9 @@ cuba-thinking/
             ├── formatter.rs                 # Output formatting
             │
             ├── ── Semantics ──
-            ├── semantic_similarity.rs       # TF-IDF cosine coherence
-            ├── contradiction_detector.rs    # Negation, 30+ antonyms, quantifiers
-            ├── novelty_tracker.rs           # Shannon information gain (Jaccard distance)
+            ├── semantic_similarity.rs       # ONNX embeddings (fastembed BGE-small, 384-dim) + TF-IDF fallback + LRU cache
+            ├── contradiction_detector.rs    # NLI zero-shot (rust-bert) + negation, 30+ antonyms, quantifiers
+            ├── novelty_tracker.rs           # Jaccard distance + semantic embedding similarity (paraphrase detection)
             ├── claim_grounding.rs           # ROSCOE faithfulness + specificity
             │
             ├── ── Deep Reasoning ──
@@ -369,16 +394,20 @@ cuba-thinking/
 
 ### Dependencies
 
-| Crate | Purpose |
-|-------|---------|
-| `tokio` | Async runtime |
-| `serde` + `serde_json` | Serialization |
-| `jsonrpc-core` | JSON-RPC 2.0 protocol |
-| `pyo3` | Python sandbox for PRM code execution |
-| `regex` | Pattern matching |
-| `tracing` | Structured logging |
-| `anyhow` + `thiserror` | Error handling |
-| `bumpalo` | Arena allocation for MCTS graph |
+| Crate | Version | Purpose |
+|-------|:-------:|---------|
+| `tokio` | 1.50 | Async runtime |
+| `serde` + `serde_json` | 1.0 | Serialization |
+| `pyo3` | 0.28 | Python sandbox for PRM code execution |
+| `fastembed` | 5.12 | ONNX semantic embeddings (BGE-small-en-v1.5, 384-dim) |
+| `rust-bert` | 0.23 | NLI zero-shot classification for contradiction detection |
+| `lru` | 0.16 | LRU cache for embeddings and sandbox evaluations |
+| `dashmap` | 6.x | Lock-free concurrent hashmap for session store |
+| `regex` | 1.12 | Pattern matching |
+| `tracing` | 0.1 | Structured logging |
+| `anyhow` + `thiserror` | 1.0 / 2.0 | Error handling |
+| `bumpalo` | 3.20 | Arena allocation for MCTS graph |
+| `mimalloc` | 0.1 | High-performance memory allocator |
 
 ---
 
