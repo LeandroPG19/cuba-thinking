@@ -348,4 +348,26 @@ mod tests {
         );
         assert!(biases.iter().any(|b| b.bias_type == BiasType::Confirmation && b.confidence == 0.9));
     }
+
+    #[test]
+    fn test_unexpected_agent_reported_bias() {
+        let biases = detect_biases(
+            "Just thinking about something.",
+            1,
+            &[],
+            Some("not_a_real_bias"),
+        );
+        assert!(biases.is_empty());
+    }
+
+    #[test]
+    fn test_empty_thought_and_history() {
+        let biases = detect_biases(
+            "",
+            1,
+            &[],
+            None,
+        );
+        assert!(biases.is_empty());
+    }
 }
