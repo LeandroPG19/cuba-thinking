@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::time::Instant;
 
 use super::observability::RedMetrics;
 
@@ -283,14 +282,6 @@ impl McpServer {
                             }
                         },
                         {
-                            "name": "run_stress_benchmark",
-                            "description": "Simulates 5000 parallel requests to validate engine networking performance.",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {}
-                            }
-                        },
-                        {
                             "name": "verify_code",
                             "description": "Execute Python code in a secure sandbox and return PRM (Process Reward Model) verdict with quality metrics. Use for quick code verification without full cognitive analysis.",
                             "inputSchema": {
@@ -356,7 +347,6 @@ impl McpServer {
 
         let result = match tool_name {
             "cuba_thinking" => self.handle_cuba_thinking_tool(params, tx).await,
-            "run_stress_benchmark" => self.handle_stress_benchmark_tool(params, tx).await,
             "verify_code" => self.handle_verify_code_tool(params).await,
             "analyze_reasoning" => self.handle_analyze_reasoning_tool(params).await,
             _ => Err(RpcError {
@@ -799,42 +789,6 @@ impl McpServer {
         });
 
         Ok(Some(response))
-    }
-
-    async fn handle_stress_benchmark_tool(&self, params: &ToolsCallParams, tx: tokio::sync::mpsc::Sender<OutgoingMessage>) -> Result<Option<Value>, RpcError> {
-        let progress_token = params._meta.as_ref().and_then(|m| m.progress_token.clone());
-        let tx_prog = tx.clone();
-
-        Self::emit_progress(&tx_prog, progress_token.clone(), 5.0, 100.0).await;
-        tracing::info!("Starting MASSIVE STRESS TEST. 5000 Parallel asynchronous requests...");
-        let start = Instant::now();
-        let mut handles = vec![];
-        
-        Self::emit_progress(&tx_prog, progress_token.clone(), 20.0, 100.0).await;
-        
-        for _i in 0..5000 {
-            let handle = tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                format!("{{\"response\": \"{}\"}}", "A".repeat(100))
-            });
-            handles.push(handle);
-        }
-        
-        Self::emit_progress(&tx_prog, progress_token.clone(), 80.0, 100.0).await;
-        
-        let _results = futures::future::join_all(handles).await;
-        let elapsed = start.elapsed();
-        let final_msg = format!("Stress Test Complete: 5000 branches processed in {:.2?}s.", elapsed);
-        tracing::info!("{}", final_msg);
-        
-        Self::emit_progress(&tx_prog, progress_token, 100.0, 100.0).await;
-        
-        Ok(Some(serde_json::json!({
-            "content": [{
-                "type": "text",
-                "text": final_msg
-            }]
-        })))
     }
 
     // ─── Phase 4: verify_code Tool ──────────────────────────────────
