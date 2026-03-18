@@ -20,9 +20,9 @@ use crate::engine::ewma_reward::EwmaTracker;
 use crate::engine::novelty_tracker::NoveltyTracker;
 use crate::engine::thought_graph::ThoughtGraph;
 use serde::Serialize;
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Sha256, Digest};
 use std::collections::{HashMap, VecDeque};
-use std::hash::{Hash, Hasher};
+
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -104,7 +104,7 @@ pub struct ThoughtSession {
     pub original_hypothesis: String,
     /// Hash of the hypothesis — session key.
     #[allow(dead_code)]
-    hypothesis_hash: u64,
+    hypothesis_hash: [u8; 32],
     /// When this session was created.
     created_at: Instant,
     /// When this session was last accessed.
@@ -466,7 +466,7 @@ impl ThoughtSession {
 /// this MUST be migrated to `tokio::sync::Mutex` or `DashMap` to prevent
 /// blocking the tokio worker thread pool under contention.
 pub struct SessionStore {
-    sessions: Mutex<HashMap<u64, ThoughtSession>>,
+    sessions: Mutex<HashMap<[u8; 32], ThoughtSession>>,
 }
 
 impl SessionStore {
@@ -515,11 +515,11 @@ impl SessionStore {
 
 /// Compute a deterministic hash for a hypothesis string.
 /// Used as session key — same hypothesis = same session.
-fn compute_hypothesis_hash(hypothesis: &str) -> u64 {
+fn compute_hypothesis_hash(hypothesis: &str) -> [u8; 32] {
     let normalized = hypothesis.trim().to_lowercase();
-    let mut hasher = DefaultHasher::new();
-    normalized.hash(&mut hasher);
-    hasher.finish()
+    let mut hasher = Sha256::new();
+    hasher.update(normalized.as_bytes());
+    hasher.finalize().into()
 }
 
 #[cfg(test)]

@@ -41,6 +41,7 @@ rust-bert = { version = "0.23", features = ["download-libtorch"] }  # NLI + ZSC 
 
 # Fix: force console with std feature for indicatif 0.16 compatibility (rust-bert transitive dep)
 console = { version = "0.16", features = ["std"] }
+sha2 = "0.10.9"
 
 [profile.release]
 opt-level = 3
