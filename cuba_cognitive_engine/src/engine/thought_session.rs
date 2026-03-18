@@ -291,6 +291,11 @@ impl ThoughtSession {
     /// Capped at 5 entries to bound memory.
     #[allow(dead_code)]
     pub fn register_failed_thought(&mut self, text: &str) {
+        // Sanity check: prevent memory exhaustion from massive strings
+        if text.len() > 100_000 {
+            return;
+        }
+
         const MAX_FAILED: usize = 5;
         if self.failed_thoughts.len() >= MAX_FAILED {
             self.failed_thoughts.remove(0);
@@ -310,7 +315,8 @@ impl ThoughtSession {
     /// Complexity: O(n·m) where n=failed thoughts, m=terms per thought.
     #[allow(dead_code)]
     pub fn is_mode_collapse(&self, new_thought: &str) -> Option<f64> {
-        if self.failed_thoughts.is_empty() {
+        // Sanity check: prevent CPU exhaustion from tokenizing massive strings
+        if self.failed_thoughts.is_empty() || new_thought.len() > 100_000 {
             return None;
         }
 
@@ -808,5 +814,23 @@ mod tests {
         session.rollback_to_thought(0);
         assert!(session.failed_thoughts.is_empty(),
             "Rollback should clear failed thoughts for fresh exploration");
+    }
+    #[test]
+    fn test_mode_collapse_large_string_safeguard() {
+        let mut session = ThoughtSession::new("hypothesis", BudgetMode::Balanced);
+
+        // Registering a massive string should be ignored
+        let massive_string = "a".repeat(100_001);
+        session.register_failed_thought(&massive_string);
+        assert!(session.failed_thoughts.is_empty(), "Massive string should not be registered");
+
+        // Processing a massive string should return None immediately
+        session.register_failed_thought("normal failed thought");
+        let start = std::time::Instant::now();
+        let result = session.is_mode_collapse(&massive_string);
+        let duration = start.elapsed();
+
+        assert!(result.is_none(), "Massive string should return None for mode collapse");
+        assert!(duration.as_millis() < 50, "Massive string processing should be virtually instantaneous due to length check");
     }
 }
