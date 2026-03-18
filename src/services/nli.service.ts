@@ -31,6 +31,7 @@ export interface NLIResult {
  */
 export class NLIService {
   private classifier: TextClassPipeline | null = null;
+  private cache = new Map<string, NLIResult>();
   private initPromise: Promise<boolean> | null = null;
   private _available = false;
   private _initAttempted = false;
@@ -83,8 +84,12 @@ export class NLIService {
   async classify(premise: string, hypothesis: string): Promise<NLIResult | null> {
     if (!this._available || !this.classifier) return null;
 
+    const cacheKey = `${premise} [SEP] ${hypothesis}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) return cached;
+
     try {
-      const combined = `${premise} [SEP] ${hypothesis}`;
+      const combined = cacheKey;
       const results = await this.classifier(combined);
 
       // Map SNLI/MultiNLI output labels to our standard
@@ -111,10 +116,12 @@ export class NLIService {
         }
       }
 
-      return {
+      const result: NLIResult = {
         label: dominantLabel,
         contradictionScore: Math.round(contradictionScore * 100) / 100,
       };
+      this.cache.set(cacheKey, result);
+      return result;
     } catch {
       return null;
     }
@@ -122,7 +129,6 @@ export class NLIService {
 
   // TD5: reset method for symmetry with other services
   reset(): void {
-    // NLI is stateless per-call (no caching) — reset is a no-op
-    // but maintains the contract: all services implement reset()
+    this.cache.clear();
   }
 }

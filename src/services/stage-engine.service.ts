@@ -46,6 +46,13 @@ const STAGE_KEYWORDS: Record<ThinkingStage, string[]> = {
   ],
 };
 
+const STAGE_REGEXES: Record<ThinkingStage, RegExp[]> = Object.fromEntries(
+  Object.entries(STAGE_KEYWORDS).map(([stage, keywords]) => [
+    stage,
+    keywords.map(kw => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'))
+  ])
+) as Record<ThinkingStage, RegExp[]>;
+
 const MAX_SAME_STAGE = 8;
 
 export class StageEngine {
@@ -84,9 +91,9 @@ export class StageEngine {
     let bestScore = 0;
 
     for (const stage of THINKING_STAGES) {
-      const keywords = STAGE_KEYWORDS[stage];
-      const score = keywords.reduce((acc, kw) => {
-        return acc + (lower.includes(kw) ? 1 : 0);
+      const regexes = STAGE_REGEXES[stage];
+      const score = regexes.reduce((acc, regex) => {
+        return acc + (regex.test(lower) ? 1 : 0);
       }, 0);
       if (score > bestScore) {
         bestScore = score;

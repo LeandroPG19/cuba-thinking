@@ -3,7 +3,7 @@ import type {
   Contradiction,
   ConfidenceCalibration,
 } from '../types.js';
-import { EmbeddingService, keywordSimilarity } from './embedding.service.js';
+import { EmbeddingService, keywordSimilarity, tokenize, frequencyMap } from './embedding.service.js';
 import { CONFIDENCE_RANGES } from './stage-engine.service.js';
 import type { NLIService } from './nli.service.js';
 
@@ -36,7 +36,9 @@ const STAGNATION_MIN_COUNT = 3;
 
 export class AntiHallucinationService {
   private allAssumptions: Array<{ thought: number; text: string }> = [];
+  private assumptionFreqs = new Map<string, { freq: Map<string, number>; norm: number }>();
   private thoughtTexts = new Map<number, string>();
+  private thoughtNegationScores = new Map<number, number>();
 
   
   // B3 fix: renamed _embeddings → embeddings, now used for semantic dedup when available
@@ -53,9 +55,20 @@ export class AntiHallucinationService {
       if (!trimmed) continue;
       let isDuplicate = false;
 
+      let freqCurr = this.assumptionFreqs.get(trimmed);
+      if (!freqCurr) {
+        const tokens = tokenize(trimmed);
+        const freq = frequencyMap(tokens);
+        let norm = 0;
+        freq.forEach(count => { norm += count * count; });
+        freqCurr = { freq, norm };
+        this.assumptionFreqs.set(trimmed, freqCurr);
+      }
+
       for (const existing of this.allAssumptions) {
         // B1 fix: always compare assumption TEXT strings, not full thought embeddings
-        const sim = keywordSimilarity(trimmed, existing.text);
+        const freqExisting = this.assumptionFreqs.get(existing.text);
+        const sim = keywordSimilarity(trimmed, existing.text, freqCurr, freqExisting);
         if (sim > ASSUMPTION_DEDUP_THRESHOLD) {
           isDuplicate = true;
           break;
@@ -79,18 +92,22 @@ export class AntiHallucinationService {
     stage?: ThinkingStage,
   ): Promise<Contradiction[]> {
     this.thoughtTexts.set(thoughtNumber, thought);
+    const currentNegScore = countNegations(thought.toLowerCase());
+    this.thoughtNegationScores.set(thoughtNumber, currentNegScore);
+
     if (thoughtNumber <= 1) return [];
 
     const contradictions: Contradiction[] = [];
-    const currentLower = thought.toLowerCase();
-    const currentNegScore = countNegations(currentLower);
+    const freqCurr = !embeddings.isAvailable ? embeddings.getFrequencyMap(thoughtNumber, thought) : undefined;
+
     for (const [prevNum, prevText] of this.thoughtTexts.entries()) {
       if (prevNum === thoughtNumber) continue;
       let sim: number;
       if (embeddings.isAvailable) {
         sim = embeddings.similarity(prevNum, thoughtNumber);
       } else {
-        sim = keywordSimilarity(thought, prevText);
+        const freqPrev = embeddings.getFrequencyMap(prevNum, prevText);
+        sim = keywordSimilarity(thought, prevText, freqCurr, freqPrev);
       }
       // V5: Use stage-appropriate threshold
       const threshold = stage
@@ -112,10 +129,11 @@ export class AntiHallucinationService {
         }
 
         // Fallback: negation polarity check
-        const prevNegScore = countNegations(prevText.toLowerCase());
+        const prevNegScore = this.thoughtNegationScores.get(prevNum) ?? countNegations(prevText.toLowerCase());
+
         // Semantic polarity check
         const polarityDiff = Math.abs(currentNegScore - prevNegScore);
-        if (polarityDiff >= 1 || hasNegationDifference(currentLower, prevText.toLowerCase())) {
+        if (polarityDiff >= 1) {
           contradictions.push({
             thoughtA: prevNum,
             thoughtB: thoughtNumber,
@@ -182,7 +200,9 @@ export class AntiHallucinationService {
         const textPrev = this.thoughtTexts.get(prev);
         const textCurr = this.thoughtTexts.get(i);
         if (!textPrev || !textCurr) break;
-        sim = keywordSimilarity(textPrev, textCurr);
+        const freqPrev = embeddings.getFrequencyMap(prev, textPrev);
+        const freqCurr = embeddings.getFrequencyMap(i, textCurr);
+        sim = keywordSimilarity(textPrev, textCurr, freqPrev, freqCurr);
       }
 
       if (sim > STAGNATION_SIM_THRESHOLD) {
@@ -233,22 +253,10 @@ export class AntiHallucinationService {
 
   reset(): void {
     this.allAssumptions = [];
+    this.assumptionFreqs.clear();
     this.thoughtTexts.clear();
+    this.thoughtNegationScores.clear();
   }
-}
-
-function hasNegationDifference(textA: string, textB: string): boolean {
-  const wordsA = new Set(textA.split(/\s+/));
-  const wordsB = new Set(textB.split(/\s+/));
-
-  let negA = 0;
-  let negB = 0;
-
-  for (const word of NEGATION_WORDS) {
-    if (wordsA.has(word)) negA++;
-    if (wordsB.has(word)) negB++;
-  }
-  return Math.abs(negA - negB) >= 1;
 }
 
 // Count negation markers for polarity scoring

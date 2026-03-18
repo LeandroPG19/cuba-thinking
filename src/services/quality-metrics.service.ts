@@ -37,7 +37,29 @@ const LOGIC_CONNECTIVES = [
   'implies', 'if', 'then', 'consequently', 'so',
   'given that', 'it follows', 'as a result',
 ] as const;
+const LOGIC_REGEXES = LOGIC_CONNECTIVES.map(c => WB(c));
 const CONCLUSION_MARKERS = /\b(therefore|thus|in conclusion|finally|the answer is|hence|to summarize)\b/i;
+
+// Depth indicators
+const DEPTH_WORDS = ['because', 'therefore', 'since', 'implies', 'consequence', 'specifically'];
+const DEPTH_REGEXES = DEPTH_WORDS.map(w => WB(w));
+
+// Breadth indicators
+const BREADTH_WORDS = ['also', 'another', 'additionally', 'furthermore', 'alternative', 'option', 'versus', 'compared'];
+const BREADTH_REGEXES = BREADTH_WORDS.map(w => WB(w));
+
+// Reasoning type indicators
+const REASONING_INDICATORS = {
+  deductive: ['therefore', 'thus', 'it follows', 'must be'].map(w => WB(w)),
+  inductive: ['pattern', 'data shows', 'evidence indicates', 'trend'].map(w => WB(w)),
+};
+
+const CAUSAL_PAIRS = [
+  [WB('because'), WB('therefore')],
+  [WB('since'), WB('thus')],
+  [WB('given that'), WB('hence')],
+  [WB('if'), WB('then')],
+];
 
 // Actionability patterns
 const IMPERATIVE_VERBS = /\b(use|implement|create|build|apply|test|verify|ensure|add|remove|check|configure|install|run|execute|avoid|consider)\b/gi;
@@ -57,6 +79,20 @@ export class QualityMetricsService {
   private firstThoughtTokens: Set<string> | null = null;
   private cumulativeVocab = new Set<string>();
   private chainRefCount = 0; // V8
+
+  // Cache for current thought processing
+  private currentThought: string | null = null;
+  private currentSentences: string[] = [];
+  private currentWords: string[] = [];
+  private currentLower: string = '';
+
+  private ensureCached(thought: string): void {
+    if (this.currentThought === thought) return;
+    this.currentThought = thought;
+    this.currentLower = thought.toLowerCase();
+    this.currentSentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    this.currentWords = this.currentLower.split(/\s+/).filter(w => w.length > 1);
+  }
 
   
   calculate(
@@ -277,8 +313,8 @@ export class QualityMetricsService {
       abductive: 0,
       analogical: 0,
     };
-    if (WB('therefore').test(lower) || WB('thus').test(lower) || WB('it follows').test(lower) || WB('must be').test(lower)) counts.deductive++;
-    if (WB('pattern').test(lower) || WB('data shows').test(lower) || WB('evidence indicates').test(lower) || WB('trend').test(lower)) counts.inductive++;
+    if (REASONING_INDICATORS.deductive.some(r => r.test(lower))) counts.deductive++;
+    if (REASONING_INDICATORS.inductive.some(r => r.test(lower))) counts.inductive++;
     if (/\b(best explanation|most likely|hypothesis|plausible)\b/i.test(lower)) counts.abductive++;
     if (/\b(similar to|like|analogous|reminds of|compared to)\b/i.test(lower)) counts.analogical++;
     const entries = Object.entries(counts) as [string, number][];
@@ -468,32 +504,27 @@ export class QualityMetricsService {
 
   // TTR-based clarity (Templin 1957)
   private evalClarity(thought: string): number {
-    if (!thought.trim()) return 0;
-    const words = thought.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-    if (words.length === 0) return 0;
-    const uniqueWords = new Set(words);
+    this.ensureCached(thought);
+    if (this.currentWords.length === 0) return 0;
+    const uniqueWords = new Set(this.currentWords);
     // TTR = unique/total
-    const ttr = uniqueWords.size / words.length;
+    const ttr = uniqueWords.size / this.currentWords.length;
     // Sentence diversity bonus
-    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const structureBonus = sentences.length >= 2 ? 0.1 : 0;
+    const structureBonus = this.currentSentences.length >= 2 ? 0.1 : 0;
     const formatBonus = (thought.includes('```') || thought.includes('- ') || thought.includes('1.')) ? 0.1 : 0;
     return clamp(ttr + structureBonus + formatBonus);
   }
 
   // Clause-based depth (Hunt 1965)
   private evalDepth(thought: string): number {
-    if (!thought.trim()) return 0;
+    this.ensureCached(thought);
     let score = 0.3;
-    const lower = thought.toLowerCase();
     // Clause indicators: commas, semicolons, colons within sentences
     const clauseIndicators = (thought.match(/[,;:]/g) || []).length;
-    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const avgClauses = sentences.length > 0 ? clauseIndicators / sentences.length : 0;
+    const avgClauses = this.currentSentences.length > 0 ? clauseIndicators / this.currentSentences.length : 0;
     score += Math.min(0.3, avgClauses * 0.1);
 
-    const depthWords = ['because', 'therefore', 'since', 'implies', 'consequence', 'specifically'];
-    score += Math.min(0.3, depthWords.filter(w => WB(w).test(lower)).length * 0.1);
+    score += Math.min(0.3, DEPTH_REGEXES.filter(r => r.test(this.currentLower)).length * 0.1);
     // Length bonus
     if (thought.length > 200) score += 0.1;
     return clamp(score);
@@ -501,11 +532,9 @@ export class QualityMetricsService {
 
   // Breadth with unique noun ratio
   private evalBreadth(thought: string): number {
-    if (!thought.trim()) return 0;
+    this.ensureCached(thought);
     let score = 0.3;
-    const lower = thought.toLowerCase();
-    const breadthWords = ['also', 'another', 'additionally', 'furthermore', 'alternative', 'option', 'versus', 'compared'];
-    score += Math.min(0.3, breadthWords.filter(w => WB(w).test(lower)).length * 0.1);
+    score += Math.min(0.3, BREADTH_REGEXES.filter(r => r.test(this.currentLower)).length * 0.1);
     const listItems = (thought.match(/^[-•*]\s/gm) || []).length;
     if (listItems >= 2) score += 0.15;
     if (listItems >= 4) score += 0.1;
@@ -519,16 +548,14 @@ export class QualityMetricsService {
 
   // Structural logic scoring (ROSCOE-inspired)
   private evalLogic(thought: string): number {
-    if (!thought.trim()) return 0;
-    const lower = thought.toLowerCase();
+    this.ensureCached(thought);
     // Connective diversity: how many DIFFERENT connective types are used
-    const usedConnectives = LOGIC_CONNECTIVES.filter(c => WB(c).test(lower));
-    const connectiveDiversity = usedConnectives.length / LOGIC_CONNECTIVES.length;
+    const usedCount = LOGIC_REGEXES.filter(r => r.test(this.currentLower)).length;
+    const connectiveDiversity = usedCount / LOGIC_CONNECTIVES.length;
     // Conditional chain depth: A because B, therefore C
     let chainDepth = 0;
-    const causalPairs = [['because', 'therefore'], ['since', 'thus'], ['given that', 'hence'], ['if', 'then']];
-    for (const [premise, conclusion] of causalPairs) {
-      if (WB(premise).test(lower) && WB(conclusion).test(lower)) chainDepth++;
+    for (const [premise, conclusion] of CAUSAL_PAIRS) {
+      if (premise.test(this.currentLower) && conclusion.test(this.currentLower)) chainDepth++;
     }
     // Conclusion presence
     const hasConclusion = CONCLUSION_MARKERS.test(thought) ? 1 : 0;
@@ -553,21 +580,20 @@ export class QualityMetricsService {
 
   // Actionability (GRACE-inspired)
   private evalActionability(thought: string): number {
-    if (!thought.trim()) return 0;
-    const sentences = thought.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    if (sentences.length === 0) return 0;
+    this.ensureCached(thought);
+    if (this.currentSentences.length === 0) return 0;
     // Imperative ratio — .match() with /g returns all matches, does NOT mutate lastIndex
     const imperatives = (thought.match(IMPERATIVE_VERBS) || []).length;
-    const imperativeRatio = Math.min(imperatives / sentences.length, 1);
+    const imperativeRatio = Math.min(imperatives / this.currentSentences.length, 1);
     // Specificity: numbers with units, file paths, extensions
     let specificityCount = 0;
     for (const pattern of SPECIFICITY_PATTERNS) {
       specificityCount += (thought.match(pattern) || []).length;
     }
-    const specificity = Math.min(specificityCount / sentences.length, 1);
+    const specificity = Math.min(specificityCount / this.currentSentences.length, 1);
     // Concreteness: absence of vague phrases
     const vagueCount = (thought.match(VAGUE_PHRASES) || []).length;
-    const concreteness = clamp(1 - vagueCount / Math.max(sentences.length, 1));
+    const concreteness = clamp(1 - vagueCount / Math.max(this.currentSentences.length, 1));
     return clamp(
       0.4 * imperativeRatio +
       0.3 * specificity +
